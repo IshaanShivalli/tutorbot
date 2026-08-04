@@ -1,0 +1,9 @@
+python-docx
+llama-cpp-python
+requests
+rich
+textual
+beautifulsoup4
+duckduckgo-search
+lxml
+huggingface_hub
