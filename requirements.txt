@@ -4,6 +4,6 @@ requests
 rich
 textual
 beautifulsoup4
-duckduckgo-search
+ddgs
 lxml
-huggingface_hub
+flask

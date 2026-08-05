@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TutorBot</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>TutorBot</h1>
+          <p id="status">Connecting...</p>
+        </div>
+        <button id="settingsButton" class="icon-button" title="Settings" aria-label="Settings">⚙</button>
+      </header>
+
+      <section id="messages" class="messages" aria-live="polite"></section>
+
+      <section class="composer">
+        <div id="suggestions" class="suggestions"></div>
+        <div class="file-row">
+          <input id="fileInput" type="file">
+          <button id="uploadButton" type="button">Upload</button>
+        </div>
+        <form id="chatForm" class="chat-form">
+          <textarea id="promptInput" rows="1" placeholder="Ask TutorBot or type /help"></textarea>
+          <button id="sendButton" type="submit">Send</button>
+        </form>
+      </section>
+    </main>
+
+    <aside id="settingsPanel" class="settings-panel" aria-hidden="true">
+      <div class="settings-card">
+        <div class="settings-heading">
+          <h2>Settings</h2>
+          <button id="closeSettings" class="icon-button" title="Close" aria-label="Close">×</button>
+        </div>
+
+        <label>
+          ESP32 Wi-Fi SSID
+          <input id="ssidInput" autocomplete="off" placeholder="Your Wi-Fi name">
+        </label>
+
+        <label>
+          ESP32 Wi-Fi Password
+          <input id="passwordInput" type="password" autocomplete="new-password" placeholder="Your Wi-Fi password">
+        </label>
+
+        <button id="saveSettings" type="button">Save Settings</button>
+        <p class="settings-note">
+          These settings are stored on the TutorBot PC server for setup reference. To change the ESP32 network, flash the sketch with the same SSID and password.
+        </p>
+      </div>
+    </aside>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

@@ -113,3 +113,5 @@ dmypy.json
 
 # Models
 models/
+uploads/
+downloads/
