@@ -28,11 +28,50 @@ TutorBot is a local AI tutor with a terminal UI, a mobile-friendly web interface
 pip install -r requirements.txt
 ```
 
-If the model is missing, download it into `models/`:
+### Downloading the models
+
+TutorBot needs at least one local GGUF model in `models/` before it can run.
+
+- Main chat model: `models/qwen2.5-0.5b-instruct-q4_k_m.gguf`
+- Lightweight image model: `models/llama-2-1.1b.gguf`
+
+If you do not already have the Hugging Face CLI installed, install it first:
 
 ```bash
+pip install huggingface-hub
+```
+
+Then log in and download the models:
+
+```bash
+huggingface-cli login
 hf download Qwen/Qwen2.5-0.5B-Instruct-GGUF qwen2.5-0.5b-instruct-q4_k_m.gguf --local-dir models
 ```
+
+For the lightweight image model, use a valid public GGUF repository with a model under 2B parameters. One known public example is `unsloth/Inkling-Small-GGUF`.
+
+Download it and save it to `models/llama-2-1.1b.gguf` so it matches the configured path in `config.py`.
+
+```bash
+hf download unsloth/Inkling-Small-GGUF llama-2-1.1b.gguf --local-dir models
+```
+
+If you want to choose a different model, search Hugging Face for a public GGUF model and use the same download pattern:
+
+```text
+https://huggingface.co/models?search=gguf+1.1b
+```
+
+Then download your chosen repo and save the file as `models/llama-2-1.1b.gguf`, or update `IMAGE_MODEL_PATH` in `config.py` if you keep a different filename.
+
+If `hf` is not available, you can also use the Python module:
+
+```bash
+python -m huggingface_hub download Qwen/Qwen2.5-0.5B-Instruct-GGUF --filename qwen2.5-0.5b-instruct-q4_k_m.gguf --cache-dir models
+python -m huggingface_hub download meta-llama/Llama-2-1.1B-GGUF --filename llama-2-1.1b.gguf --cache-dir models
+```
+
+If you prefer, download the model files directly from Hugging Face and place them inside the `models/` folder.
 
 ## Terminal App
 

@@ -78,7 +78,7 @@ class SuggestionsBox (Static ):
             self .remove_class ("visible")
             return 
 
-        lines =[]
+        lines =["[bold cyan]Available commands[/bold cyan]"]
         for cmd in matches [:6 ]:
             lines .append (f"[cmd-name]{cmd.usage}[/cmd-name]  [dim]{cmd.description}[/dim]")
         self .update ("\n".join (lines ))

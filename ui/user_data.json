@@ -1,0 +1,33 @@
+{
+  "users": {
+    "guest": {
+      "username": "guest",
+      "role": "guest",
+      "email": "guest@tutorbot.com",
+      "password_hash": null,
+      "created_at": "2026-08-05T14:49:56.073051Z",
+      "last_active": null,
+      "verified": false
+    },
+    "admin": {
+      "username": "admin",
+      "role": "admin",
+      "email": "admin@tutorbot.com",
+      "password_hash": "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918",
+      "created_at": "2026-08-05T14:49:56.074601Z",
+      "last_active": null,
+      "verified": false
+    },
+    "ishaan": {
+      "username": "ishaan",
+      "role": "student",
+      "email": "smilewithishaan25@gmail.com",
+      "password_hash": "eebaee0720ce9fc5736f2fd5e9a380f6476a1f7385998b58b67c240a0a9b9ec3",
+      "created_at": "2026-08-05T14:49:56.074601Z",
+      "last_active": "2026-08-05T14:50:14.526663Z",
+      "verified": true
+    }
+  },
+  "current_user": "ishaan",
+  "pending_verifications": {}
+}

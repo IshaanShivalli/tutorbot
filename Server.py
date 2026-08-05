@@ -1,10 +1,16 @@
+import json
 import re
+from io import BytesIO
 from pathlib import Path
 from uuid import uuid4
 
 from flask import Flask, jsonify, request, send_from_directory
+from PIL import Image
 from werkzeug.utils import secure_filename
 from werkzeug.serving import run_simple
+import pytesseract
+
+from vision_model import describe_image
 
 from config import SYSTEM_PROMPT
 from model import ask_ai
@@ -40,9 +46,20 @@ MODEL_INFO = {
 }
 
 
-def tutorbot_reply(prompt: str) -> str:
+def tutorbot_reply(prompt: str, language: str = "English", profile: dict = None) -> str:
     chat_history.append({"role": "user", "content": prompt})
-    reply = ask_ai(chat_history, SYSTEM_PROMPT, max_tokens=1024)
+    request_prompt = SYSTEM_PROMPT
+    if profile:
+        grade = str(profile.get("grade", "Grade 9") or "Grade 9")
+        subject = str(profile.get("subject", "General") or "General")
+        request_prompt += (
+            f"\n\nThe student is currently in {grade} and wants to focus on {subject}. "
+            "Tailor explanations, examples, and quiz challenges to this grade and subject focus. "
+            "Keep responses aligned with the selected subject, and explain how other topics connect if needed."
+        )
+    if language and language.lower() != "english":
+        request_prompt += f"\n\nAnswer the user in {language}. If the user asks in a different language, reply in that language."
+    reply = ask_ai(chat_history, request_prompt, max_tokens=1024)
     chat_history.append({"role": "assistant", "content": reply})
     return reply
 
@@ -79,6 +96,17 @@ def parse_quiz_args(argument: str):
 def safe_doc_name(topic: str, suffix: str) -> Path:
     slug = re.sub(r"[^a-zA-Z0-9_-]+", "_", topic.strip().lower()).strip("_") or "quiz"
     return DOWNLOAD_DIR / f"{slug}_{suffix}.docx"
+
+
+def extract_image_text(image_path: Path) -> str:
+    try:
+        with Image.open(image_path) as image:
+            image = image.convert("RGB")
+            ocr_result = pytesseract.image_to_string(image, lang="eng")
+            return ocr_result.strip()
+    except Exception as exc:
+        print(f"[Server] OCR failed: {exc}")
+        return ""
 
 
 def command_response(command_text: str):
@@ -178,6 +206,50 @@ def command_response(command_text: str):
     }
 
 
+@app.post("/process-image")
+def process_image():
+    image_file = request.files.get("image")
+    if image_file is None or image_file.filename == "":
+        return jsonify({"error": "Field 'image' is required."}), 400
+
+    filename = secure_filename(image_file.filename) or "image.png"
+    saved_path = UPLOAD_DIR / f"{uuid4().hex}_{filename}"
+    image_file.save(saved_path)
+
+    ocr_text = extract_image_text(saved_path)
+    if not ocr_text:
+        ocr_text = "No readable text was detected in the image."
+
+    profile = request.form.get("profile")
+    profile_data = {}
+    if profile:
+        try:
+            profile_data = json.loads(profile)
+        except Exception:
+            profile_data = {}
+    language = request.form.get("language", "English")
+
+    image_description = describe_image(saved_path)
+
+    image_prompt = (
+        "I have processed an image and generated a description of what is visible. "
+        "Use that description and any OCR text to explain the image clearly for the student. "
+        f"Image description:\n{image_description}\n\n"
+        f"OCR text extracted from the image:\n{ocr_text}\n\n"
+        "If the image contains diagrams, charts, or text, summarize what it shows in an educational way. "
+        "Keep the response aligned with the student's grade and subject focus."
+    )
+
+    response_text = tutorbot_reply(image_prompt, language=language, profile=profile_data)
+    return jsonify(
+        {
+            "type": "assistant",
+            "response": response_text,
+            "ocr_text": ocr_text,
+        }
+    )
+
+
 @app.get("/")
 def index():
     return send_from_directory(WEB_DIR, "index.html")
@@ -204,16 +276,39 @@ def commands():
 def ai_chat():
     data = request.get_json(silent=True) or {}
     prompt = data.get("prompt") or data.get("message") or data.get("text")
+    language = data.get("language")
 
     if not isinstance(prompt, str) or not prompt.strip():
         return jsonify({"error": "JSON field 'prompt' is required"}), 400
 
     prompt = prompt.strip()
+    language = str(language).strip() if isinstance(language, str) else ""
 
     try:
         if prompt.startswith("/"):
             return jsonify(command_response(prompt))
-        return jsonify({"type": "assistant", "response": tutorbot_reply(prompt)})
+
+        if language and language.lower() != "english":
+            return jsonify(
+                {
+                    "type": "assistant",
+                    "response": tutorbot_reply(
+                        prompt,
+                        language=language,
+                        profile=data.get("profile"),
+                    ),
+                }
+            )
+
+        return jsonify(
+            {
+                "type": "assistant",
+                "response": tutorbot_reply(
+                    prompt,
+                    profile=data.get("profile"),
+                ),
+            }
+        )
     except Exception as exc:
         return jsonify({"error": f"TutorBot model failed: {exc}"}), 500
 

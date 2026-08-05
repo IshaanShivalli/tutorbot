@@ -24,6 +24,10 @@ def normalize_quiz_text (raw_text :str )->str :
     return normalized .strip ()
 
 
+def _count_quiz_questions (raw_text :str )->int :
+    return len (re.findall (r"\bQ\d+:", raw_text ,flags =re .IGNORECASE ))
+
+
 def generate_quiz (
 topic ,
 grade ="Grade 9",
@@ -82,7 +86,7 @@ Requirements:
 - The quiz size is capped at 20 questions.
 {image_instruction}{extra_instructions}
 
-Output this exact structure and nothing else:
+Output this exact structure and nothing else. Write Q1 through Q{number_of_questions}.
 
 TITLE: {topic} Quiz
 SUBTITLE: {grade} - {topic}
@@ -108,7 +112,7 @@ D) <option>
 ANSWER: <letter>
 EXPLANATION: <one-sentence explanation>
 
-...repeat for every question...
+Continue numbering all questions through Q{number_of_questions}.
 
 {reference_material_section}
 
@@ -118,9 +122,7 @@ Generate the quiz now.
 
 
 
-
-
-    max_tokens =min (6000 ,number_of_questions *220 +200 )
+    max_tokens =min (6000 ,number_of_questions *240 +250 )
     quiz =ask_ai (
     [
     {
@@ -135,7 +137,32 @@ Generate the quiz now.
     repeat_penalty =1.05 ,
     )
 
-    return normalize_quiz_text (quiz )
+    quiz =normalize_quiz_text (quiz )
+    generated_count =_count_quiz_questions (quiz )
+
+    if generated_count < number_of_questions :
+        print (f"[quiz_generator] Only generated {generated_count} of {number_of_questions} questions, continuing...")
+        continuation_prompt =(
+        f"The quiz generated so far contains {generated_count} questions. Continue the quiz starting at Q{generated_count +1} and finish through Q{number_of_questions} using the same exact format. "
+        "Do not repeat any earlier questions or answers."
+        )
+        continuation =ask_ai (
+        [
+        {
+        "role":"user",
+        "content":continuation_prompt +"\n\n"+quiz
+        }
+        ],
+        QUIZ_SYSTEM_PROMPT ,
+        max_tokens =min (6000 ,(number_of_questions -generated_count) *240 +250 ),
+        temperature =0.2 ,
+        top_p =0.9 ,
+        repeat_penalty =1.05 ,
+        )
+        continuation =normalize_quiz_text (continuation )
+        quiz =normalize_quiz_text (quiz +"\n\n"+continuation )
+
+    return quiz
 
 
 def reformat_quiz_for_doc (

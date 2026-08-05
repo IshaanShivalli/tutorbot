@@ -6,6 +6,9 @@ const sendButton = document.querySelector("#sendButton");
 const suggestions = document.querySelector("#suggestions");
 const fileInput = document.querySelector("#fileInput");
 const uploadButton = document.querySelector("#uploadButton");
+const processImageButton = document.querySelector("#processImageButton");
+const imagePreview = document.querySelector("#imagePreview");
+const imageHint = document.querySelector("#imageHint");
 const assetsButton = document.querySelector("#assetsButton");
 const filesPanel = document.querySelector("#filesPanel");
 const filesList = document.querySelector("#filesList");
@@ -15,18 +18,73 @@ const settingsButton = document.querySelector("#settingsButton");
 const closeSettings = document.querySelector("#closeSettings");
 const ssidInput = document.querySelector("#ssidInput");
 const passwordInput = document.querySelector("#passwordInput");
+const languageSelect = document.querySelector("#languageSelect");
+const learningLanguageSelect = document.querySelector("#learningLanguageSelect");
 const saveSettings = document.querySelector("#saveSettings");
 const voiceButton = document.querySelector("#voiceButton");
 const ttsButton = document.querySelector("#ttsButton");
 const clearButton = document.querySelector("#clearButton");
+const profileText = document.querySelector("#profileText");
+const changeFocusButton = document.querySelector("#changeFocusButton");
+const focusModal = document.querySelector("#focusModal");
+const closeFocusModal = document.querySelector("#closeFocusModal");
+const gradeSelect = document.querySelector("#gradeSelect");
+const subjectSelect = document.querySelector("#subjectSelect");
+const saveFocusButton = document.querySelector("#saveFocusButton");
 
 let commands = [];
 let recognition = null;
 let ttsEnabled = true;
 let isListening = false;
+let cameraStream = null;
+let capturedImageBlob = null;
 
 const voiceSupported = window.SpeechRecognition || window.webkitSpeechRecognition;
 const speechSupported = typeof window.speechSynthesis !== "undefined";
+
+const languageMap = {
+  English: "en-US",
+  Spanish: "es-ES",
+  French: "fr-FR",
+  German: "de-DE",
+  Chinese: "zh-CN",
+  Portuguese: "pt-BR",
+  Japanese: "ja-JP",
+  Russian: "ru-RU",
+  Arabic: "ar-SA",
+  Hindi: "hi-IN",
+};
+
+function getSelectedInterfaceLanguage() {
+  return languageSelect?.value || localStorage.getItem("tutorbot_interface_language") || "English";
+}
+
+function getSelectedLearningLanguage() {
+  return learningLanguageSelect?.value || localStorage.getItem("tutorbot_learning_language") || "English";
+}
+
+function getLanguageCode(language) {
+  return languageMap[language] || "en-US";
+}
+
+function loadLanguageSelection() {
+  const interfaceLanguage = localStorage.getItem("tutorbot_interface_language") || "English";
+  const learningLanguage = localStorage.getItem("tutorbot_learning_language") || "English";
+  if (languageSelect) {
+    languageSelect.value = interfaceLanguage;
+  }
+  if (learningLanguageSelect) {
+    learningLanguageSelect.value = learningLanguage;
+  }
+}
+
+function saveLanguageSelection() {
+  const interfaceLanguage = getSelectedInterfaceLanguage();
+  const learningLanguage = getSelectedLearningLanguage();
+  localStorage.setItem("tutorbot_interface_language", interfaceLanguage);
+  localStorage.setItem("tutorbot_learning_language", learningLanguage);
+  return learningLanguage;
+}
 
 function escapeHtml(value) {
   return String(value)
@@ -115,28 +173,49 @@ async function loadCommands() {
     const response = await fetch("/commands");
     const data = await response.json();
     commands = data.commands || [];
-    renderSuggestions("");
   } catch {
     commands = [];
   }
 }
 
+function normalizeSearchText(value) {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "");
+}
+
 function renderSuggestions(value) {
   suggestions.innerHTML = "";
-  const normalized = value.trim().toLowerCase();
+  const normalized = normalizeSearchText(value);
+  if (!normalized) return;
+
   const matches = commands
-    .filter((command) => !normalized || command.name.startsWith(normalized))
-    .slice(0, 8);
+    .filter((command) => {
+      const name = normalizeSearchText(command.name);
+      const usage = normalizeSearchText(command.usage);
+      return name.includes(normalized) || usage.includes(normalized);
+    })
+    .slice(0, 12);
+
+  if (value.trim() === "/") {
+    const header = document.createElement("div");
+    header.className = "suggestions-header";
+    header.textContent = "Available commands";
+    suggestions.appendChild(header);
+  }
 
   for (const command of matches) {
     const item = document.createElement("button");
     item.type = "button";
     item.className = "suggestion";
-    item.textContent = command.usage;
+    item.innerHTML = `<strong>${escapeHtml(command.usage)}</strong><br><small>${escapeHtml(command.description)}</small>`;
     item.title = command.description;
     item.addEventListener("click", () => {
       promptInput.value = command.name + " ";
       promptInput.focus();
+      renderSuggestions(promptInput.value);
     });
     suggestions.appendChild(item);
   }
@@ -188,7 +267,7 @@ function initSpeechRecognition() {
   if (!voiceSupported) return;
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   recognition = new SpeechRecognition();
-  recognition.lang = "en-US";
+  recognition.lang = getLanguageCode(getSelectedLearningLanguage());
   recognition.interimResults = false;
   recognition.maxAlternatives = 1;
 
@@ -226,10 +305,105 @@ function toggleTts() {
   ttsButton.textContent = ttsEnabled ? "🔊" : "🔇";
 }
 
+function updateSpeechRecognitionLanguage() {
+  if (!recognition || !voiceSupported) return;
+  recognition.lang = getLanguageCode(getSelectedLearningLanguage());
+}
+
+function previewSelectedImage() {
+  const file = fileInput.files?.[0];
+  if (!file) {
+    imagePreview.classList.add("hidden");
+    imageHint.classList.add("hidden");
+    return;
+  }
+
+  if (!file.type.startsWith("image/")) {
+    addMessage("error", "Please choose an image file to preview.");
+    imagePreview.classList.add("hidden");
+    imageHint.classList.add("hidden");
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    imagePreview.src = reader.result;
+    imagePreview.classList.remove("hidden");
+    imageHint.textContent = "Image ready to process. Click Process image to send it to TutorBot.";
+    imageHint.classList.remove("hidden");
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearImagePreview() {
+  imagePreview.src = "";
+  imagePreview.classList.add("hidden");
+  imageHint.textContent = "";
+  imageHint.classList.add("hidden");
+}
+
+async function processSelectedImage() {
+  const file = fileInput.files?.[0] || null;
+  const imageFile = capturedImageBlob || file;
+  if (!imageFile) {
+    addMessage("error", "Choose an image or capture one with the camera before processing.");
+    return;
+  }
+  if (file && !file.type.startsWith("image/")) {
+    addMessage("error", "Only image files can be processed.");
+    return;
+  }
+
+  processImageButton.disabled = true;
+  addMessage("user", "[Image selected for processing]");
+  addMessage("system", "Analyzing image...");
+
+  const body = new FormData();
+  if (capturedImageBlob) {
+    body.append("image", capturedImageBlob, "capture.jpg");
+  } else {
+    body.append("image", file);
+  }
+  body.append("language", getSelectedLearningLanguage());
+  body.append(
+    "profile",
+    JSON.stringify({
+      grade: localStorage.getItem("tutorbot_grade") || "Grade 9",
+      subject: localStorage.getItem("tutorbot_subject") || "General",
+    })
+  );
+
+  try {
+    const response = await fetch("/process-image", {method: "POST", body});
+    const data = await response.json();
+    messages.lastChild.remove();
+
+    if (!response.ok) {
+      addMessage("error", data.error || "Image processing failed.");
+      return;
+    }
+
+    addMessage(data.type || "assistant", data.response || "", data.files || []);
+    if (data.ocr_text) {
+      addMessage("system", `OCR detected:\n${data.ocr_text}`);
+    }
+    if (data.image_description) {
+      addMessage("system", `Image description:\n${data.image_description}`);
+    }
+    speakText(data.response || "");
+  } catch (error) {
+    messages.lastChild.remove();
+    addMessage("error", `Image request failed: ${error.message}`);
+  } finally {
+    processImageButton.disabled = false;
+  }
+}
+
 function speakText(text) {
   if (!speechSupported || !ttsEnabled) return;
   if (!text.trim()) return;
   const utterance = new SpeechSynthesisUtterance(text.replace(/\s+/g, " ").trim());
+  utterance.lang = getLanguageCode(getSelectedLearningLanguage());
   window.speechSynthesis.cancel();
   window.speechSynthesis.speak(utterance);
 }
@@ -243,7 +417,14 @@ async function sendPrompt(prompt) {
     const response = await fetch("/ai-chat", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({prompt}),
+      body: JSON.stringify({
+        prompt,
+        language: getSelectedLearningLanguage(),
+        profile: {
+          grade: localStorage.getItem("tutorbot_grade") || "Grade 9",
+          subject: localStorage.getItem("tutorbot_subject") || "General",
+        },
+      }),
     });
     const data = await response.json();
     messages.lastChild.remove();
@@ -273,12 +454,24 @@ chatForm.addEventListener("submit", (event) => {
 });
 
 promptInput.addEventListener("input", () => {
-  if (promptInput.value.startsWith("/")) {
+  if (promptInput.value.trim()) {
     renderSuggestions(promptInput.value);
   } else {
     suggestions.innerHTML = "";
   }
 });
+
+fileInput.addEventListener("change", () => {
+  clearImagePreview();
+  previewSelectedImage();
+});
+cameraButton.addEventListener("click", startCameraCapture);
+captureButton.addEventListener("click", captureCameraImage);
+cancelCameraButton.addEventListener("click", () => {
+  stopCameraCapture();
+  addMessage("system", "Camera capture cancelled.");
+});
+processImageButton.addEventListener("click", processSelectedImage);
 
 voiceButton.addEventListener("click", () => {
   if (isListening) {
@@ -341,6 +534,43 @@ function hideSettings() {
   settingsPanel.setAttribute("aria-hidden", "true");
 }
 
+function showFocusModal(requireSelection = false) {
+  focusModal.classList.remove("hidden");
+  focusModal.setAttribute("aria-hidden", "false");
+  if (requireSelection) {
+    focusModal.querySelector("button[type=button]").focus();
+  }
+}
+
+function hideFocusModal() {
+  focusModal.classList.add("hidden");
+  focusModal.setAttribute("aria-hidden", "true");
+}
+
+function updateProfileBanner() {
+  const grade = localStorage.getItem("tutorbot_grade") || "Grade 9";
+  const subject = localStorage.getItem("tutorbot_subject") || "General";
+  if (profileText) {
+    profileText.textContent = `${grade} • ${subject}`;
+  }
+}
+
+function loadProfileFocus() {
+  const grade = localStorage.getItem("tutorbot_grade") || "Grade 9";
+  const subject = localStorage.getItem("tutorbot_subject") || "General";
+  if (gradeSelect) gradeSelect.value = grade;
+  if (subjectSelect) subjectSelect.value = subject;
+  updateProfileBanner();
+}
+
+function saveProfileFocus() {
+  const grade = gradeSelect?.value || "Grade 9";
+  const subject = subjectSelect?.value || "General";
+  localStorage.setItem("tutorbot_grade", grade);
+  localStorage.setItem("tutorbot_subject", subject);
+  updateProfileBanner();
+}
+
 settingsButton.addEventListener("click", async () => {
   openSettings();
   try {
@@ -348,6 +578,8 @@ settingsButton.addEventListener("click", async () => {
     const data = await response.json();
     ssidInput.value = data.ssid || "";
     passwordInput.value = "";
+    loadLanguageSelection();
+    updateSpeechRecognitionLanguage();
   } catch {
     addMessage("error", "Could not load ESP32 settings.");
   }
@@ -355,9 +587,22 @@ settingsButton.addEventListener("click", async () => {
 
 closeSettings.addEventListener("click", hideSettings);
 
+changeFocusButton.addEventListener("click", () => showFocusModal());
+closeFocusModal.addEventListener("click", hideFocusModal);
+saveFocusButton.addEventListener("click", () => {
+  saveProfileFocus();
+  hideFocusModal();
+  addMessage("system", "Learning profile updated.");
+});
+
 saveSettings.addEventListener("click", async () => {
   const ssid = ssidInput.value.trim();
   const password = passwordInput.value;
+  const selectedInterfaceLanguage = getSelectedInterfaceLanguage();
+  const selectedLearningLanguage = getSelectedLearningLanguage();
+  localStorage.setItem("tutorbot_interface_language", selectedInterfaceLanguage);
+  localStorage.setItem("tutorbot_learning_language", selectedLearningLanguage);
+  updateSpeechRecognitionLanguage();
 
   try {
     const response = await fetch("/esp32/settings", {
@@ -389,6 +634,13 @@ if (!speechSupported) {
   ttsButton.title = "Speech output not supported in this browser";
 }
 
-addMessage("system", "Welcome to TutorBot. Ask a question or use /help.");
+loadLanguageSelection();
+loadProfileFocus();
+if (!localStorage.getItem("tutorbot_grade") || !localStorage.getItem("tutorbot_subject")) {
+  showFocusModal(true);
+  addMessage("system", "Welcome to TutorBot. Please set your grade and subject focus first.");
+} else {
+  addMessage("system", "Welcome to TutorBot. Ask a question or use /help.");
+}
 loadStatus();
 loadCommands();

@@ -80,3 +80,8 @@ def get_current_streak ()->StreakResult :
     is_new_day =False ,
     longest =data .get ("longest",0 ),
     )
+
+
+def update_streak_for_user(username: str) -> StreakResult :
+    """Compatibility alias used by the UI import path."""
+    return update_streak_on_open ()

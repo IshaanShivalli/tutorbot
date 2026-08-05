@@ -1,9 +1,10 @@
 MODEL_PATH ="models/qwen2.5-0.5b-instruct-q4_k_m.gguf"
+IMAGE_MODEL_PATH ="models/SmolVLM-256M-Instruct-Q8_0.gguf"
 EMAIL_FROM ="no-reply@tutorbot.com"
-SMTP_SERVER ="smtp.example.com"
+SMTP_SERVER ="smtp.gmail.com"
 SMTP_PORT =587
-SMTP_USER ="your-email-user"
-SMTP_PASSWORD ="your-email-password"
+SMTP_USER ="smilewithishaan25@gmail.com"
+SMTP_PASSWORD ="mlcdavnmhbwohqhr"
 SMTP_USE_TLS =True
 
 

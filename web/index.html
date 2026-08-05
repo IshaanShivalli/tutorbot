@@ -23,19 +23,79 @@
         </div>
       </header>
 
+      <section class="profile-banner" aria-live="polite">
+        <div>
+          <p class="profile-label">Learning focus</p>
+          <p id="profileText">Grade 9 • General</p>
+        </div>
+        <button id="changeFocusButton" type="button" class="pill-button">Change focus</button>
+      </section>
+
       <section class="messages-wrapper">
         <div id="messages" class="messages" aria-live="polite"></div>
       </section>
+
+      <aside id="focusModal" class="focus-modal hidden" aria-hidden="true">
+        <div class="focus-card">
+          <div class="focus-heading">
+            <h2>Set your learning profile</h2>
+            <button id="closeFocusModal" class="icon-button" title="Close" aria-label="Close">×</button>
+          </div>
+          <p>Select your current grade and the subject you want TutorBot to focus on.</p>
+          <label>
+            Grade level
+            <select id="gradeSelect">
+              <option value="Grade 6">Grade 6</option>
+              <option value="Grade 7">Grade 7</option>
+              <option value="Grade 8">Grade 8</option>
+              <option value="Grade 9">Grade 9</option>
+              <option value="Grade 10">Grade 10</option>
+              <option value="Grade 11">Grade 11</option>
+              <option value="Grade 12">Grade 12</option>
+              <option value="College">College</option>
+              <option value="Adult">Adult</option>
+            </select>
+          </label>
+          <label>
+            Subject focus
+            <select id="subjectSelect">
+              <option value="General">General</option>
+              <option value="Mathematics">Mathematics</option>
+              <option value="Science">Science</option>
+              <option value="English">English</option>
+              <option value="History">History</option>
+              <option value="Computer Science">Computer Science</option>
+              <option value="Languages">Languages</option>
+              <option value="Art">Art</option>
+              <option value="Music">Music</option>
+            </select>
+          </label>
+          <button id="saveFocusButton" type="button">Save learning profile</button>
+        </div>
+      </aside>
 
       <section class="composer">
         <div id="suggestions" class="suggestions"></div>
         <div class="file-row">
           <label class="file-input-label">
             <span>Upload file</span>
-            <input id="fileInput" type="file">
+            <input id="fileInput" type="file" accept="image/*" capture="environment">
           </label>
           <button id="uploadButton" type="button">Upload</button>
+          <button id="cameraButton" type="button">Use camera</button>
+          <button id="processImageButton" type="button">Process image</button>
           <button id="assetsButton" type="button">Files</button>
+        </div>
+        <div class="image-preview-row">
+          <img id="imagePreview" class="image-preview hidden" alt="Selected image preview">
+          <p id="imageHint" class="image-hint hidden">Select an image file to preview before processing.</p>
+        </div>
+        <div id="cameraPanel" class="camera-panel hidden">
+          <video id="cameraPreview" class="camera-preview" autoplay playsinline muted></video>
+          <div class="camera-actions">
+            <button id="captureButton" type="button">Capture</button>
+            <button id="cancelCameraButton" type="button">Cancel</button>
+          </div>
         </div>
         <form id="chatForm" class="chat-form">
           <textarea id="promptInput" rows="1" placeholder="Ask TutorBot or type /help"></textarea>
@@ -70,6 +130,38 @@
         <label>
           ESP32 Wi-Fi Password
           <input id="passwordInput" type="password" autocomplete="new-password" placeholder="Your Wi-Fi password">
+        </label>
+
+        <label>
+          Interface language
+          <select id="languageSelect">
+            <option value="English">English</option>
+            <option value="Spanish">Español</option>
+            <option value="French">Français</option>
+            <option value="German">Deutsch</option>
+            <option value="Chinese">中文</option>
+            <option value="Portuguese">Português</option>
+            <option value="Japanese">日本語</option>
+            <option value="Russian">Русский</option>
+            <option value="Arabic">العربية</option>
+            <option value="Hindi">हिन्दी</option>
+          </select>
+        </label>
+
+        <label>
+          Preferred learning language
+          <select id="learningLanguageSelect">
+            <option value="English">English</option>
+            <option value="Spanish">Español</option>
+            <option value="French">Français</option>
+            <option value="German">Deutsch</option>
+            <option value="Chinese">中文</option>
+            <option value="Portuguese">Português</option>
+            <option value="Japanese">日本語</option>
+            <option value="Russian">Русский</option>
+            <option value="Arabic">العربية</option>
+            <option value="Hindi">हिन्दी</option>
+          </select>
         </label>
 
         <button id="saveSettings" type="button">Save Settings</button>
