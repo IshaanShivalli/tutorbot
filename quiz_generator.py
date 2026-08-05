@@ -30,7 +30,8 @@ grade ="Grade 9",
 number_of_questions =5 ,
 quiz_type ="MCQ",
 use_web_context =True ,
-include_images =False 
+include_images =False ,
+extra_instructions :str =""
 ):
     
     number_of_questions =max (1 ,min (number_of_questions ,20 ))
@@ -51,6 +52,10 @@ Source: {source_title}
     else :
         print ("[quiz_generator] No web context found.")
         reference_material_section ="**REFERENCE MATERIAL:** None provided. Generate clear conceptual questions based on the topic."
+
+    if extra_instructions :
+        extra_instructions ="\n\n" + extra_instructions
+
 
 
     image_instruction =""
@@ -75,7 +80,7 @@ Requirements:
 - Do not use any rude, offensive, slang, or inappropriate language.
 - Do not stop early. The output must contain all {number_of_questions} questions and answers.
 - The quiz size is capped at 20 questions.
-{image_instruction}
+{image_instruction}{extra_instructions}
 
 Output this exact structure and nothing else:
 
