@@ -1,8 +1,8 @@
-from ui.app import TutorBotApp
+from ui .app import TutorBotApp 
 
 
-if __name__ == "__main__":
+if __name__ =="__main__":
 
-    app = TutorBotApp()
+    app =TutorBotApp ()
 
-    app.run()
+    app .run ()
