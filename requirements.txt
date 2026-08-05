@@ -6,7 +6,4 @@ textual
 beautifulsoup4
 ddgs
 lxml
-<<<<<<< HEAD
 flask
-=======
->>>>>>> 6696ff70c425dd6f93af6c93d97bcaa324f38300

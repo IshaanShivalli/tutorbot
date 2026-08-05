@@ -2,32 +2,56 @@
 <html lang="en">
   <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>TutorBot</title>
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
     <main class="app-shell">
       <header class="topbar">
-        <div>
-          <h1>TutorBot</h1>
-          <p id="status">Connecting...</p>
+        <div class="topbar-title">
+          <div>
+            <h1>TutorBot</h1>
+            <p id="status">Connecting...</p>
+          </div>
         </div>
-        <button id="settingsButton" class="icon-button" title="Settings" aria-label="Settings">⚙</button>
+        <div class="topbar-actions">
+          <button id="voiceButton" class="icon-button" title="Voice input" aria-label="Voice input">🎙</button>
+          <button id="ttsButton" class="icon-button" title="Toggle speech output" aria-label="Toggle speech output">🔊</button>
+          <button id="clearButton" class="icon-button" title="Clear chat" aria-label="Clear chat">🧹</button>
+          <button id="settingsButton" class="icon-button" title="Settings" aria-label="Settings">⚙</button>
+        </div>
       </header>
 
-      <section id="messages" class="messages" aria-live="polite"></section>
+      <section class="messages-wrapper">
+        <div id="messages" class="messages" aria-live="polite"></div>
+      </section>
 
       <section class="composer">
         <div id="suggestions" class="suggestions"></div>
         <div class="file-row">
-          <input id="fileInput" type="file">
+          <label class="file-input-label">
+            <span>Upload file</span>
+            <input id="fileInput" type="file">
+          </label>
           <button id="uploadButton" type="button">Upload</button>
+          <button id="assetsButton" type="button">Files</button>
         </div>
         <form id="chatForm" class="chat-form">
           <textarea id="promptInput" rows="1" placeholder="Ask TutorBot or type /help"></textarea>
           <button id="sendButton" type="submit">Send</button>
         </form>
+      </section>
+
+      <section id="filesPanel" class="files-panel hidden" aria-hidden="true">
+        <div class="files-card">
+          <div class="files-heading">
+            <h2>Uploaded files</h2>
+            <button id="closeFiles" class="icon-button" title="Close files" aria-label="Close">×</button>
+          </div>
+          <ul id="filesList" class="files-list"></ul>
+          <p class="files-note">Files upload directly to the PC server for best speed. Download links open in a new tab.</p>
+        </div>
       </section>
     </main>
 
