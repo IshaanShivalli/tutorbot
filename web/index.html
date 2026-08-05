@@ -76,20 +76,25 @@
 
       <section class="composer">
         <div id="suggestions" class="suggestions"></div>
-        <div class="file-row">
-          <label class="file-input-label">
-            <span>Upload file</span>
-            <input id="fileInput" type="file" accept="image/*" capture="environment">
-          </label>
-          <button id="uploadButton" type="button">Upload</button>
-          <button id="cameraButton" type="button">Use camera</button>
-          <button id="processImageButton" type="button">Process image</button>
-          <button id="assetsButton" type="button">Files</button>
-        </div>
-        <div class="image-preview-row">
-          <img id="imagePreview" class="image-preview hidden" alt="Selected image preview">
-          <p id="imageHint" class="image-hint hidden">Select an image file to preview before processing.</p>
-        </div>
+        <form id="chatForm" class="chat-form">
+          <div class="input-wrapper">
+            <textarea id="promptInput" rows="1" placeholder="Ask TutorBot or type /help"></textarea>
+            <div class="composer-actions">
+              <div class="dropdown-wrapper">
+                <button id="uploadMenuButton" type="button" title="Upload options">📎</button>
+                <div id="uploadMenu" class="upload-menu hidden">
+                  <button type="button" id="menuUploadImage" class="menu-item">📤 Upload image</button>
+                  <button type="button" id="menuUseCamera" class="menu-item">📷 Use camera</button>
+                  <button type="button" id="menuProcessImage" class="menu-item">🖼️ Process image</button>
+                  <button type="button" id="menuFiles" class="menu-item">📁 Files</button>
+                </div>
+              </div>
+              <button id="sendButton" type="submit">Send</button>
+            </div>
+          </div>
+          <input id="fileInput" type="file" accept="image/*" capture="environment" style="display: none;">
+          <input id="filesInput" type="file" accept="image/*,.pdf,.doc,.docx,.txt" style="display: none;" multiple>
+        </form>
         <div id="cameraPanel" class="camera-panel hidden">
           <video id="cameraPreview" class="camera-preview" autoplay playsinline muted></video>
           <div class="camera-actions">
@@ -97,10 +102,6 @@
             <button id="cancelCameraButton" type="button">Cancel</button>
           </div>
         </div>
-        <form id="chatForm" class="chat-form">
-          <textarea id="promptInput" rows="1" placeholder="Ask TutorBot or type /help"></textarea>
-          <button id="sendButton" type="submit">Send</button>
-        </form>
       </section>
 
       <section id="filesPanel" class="files-panel hidden" aria-hidden="true">

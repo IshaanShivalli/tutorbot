@@ -1,16 +1,29 @@
-plugins {
-    id "com.android.application"
-}
-
 android {
-    namespace "com.tutorbot.mobile"
-    compileSdk 35
-
+    compileSdkVersion 34
+    
     defaultConfig {
-        applicationId "com.tutorbot.mobile"
-        minSdk 23
-        targetSdk 35
+        minSdkVersion 24
+        targetSdkVersion 34
         versionCode 1
-        versionName "1.0"
+        versionName "1.0.0"
+        
+        namespace "com.tutorbot.mobile"
+    }
+    
+    signingConfigs {
+        release {
+            storeFile file("../tutorbot.jks")
+            storePassword "tutorbot123"
+            keyAlias "tutorbot-key"
+            keyPassword "tutorbot123"
+        }
+    }
+    
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
     }
 }

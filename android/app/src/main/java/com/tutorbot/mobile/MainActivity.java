@@ -18,16 +18,18 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 public class MainActivity extends Activity {
-    private static final String TUTORBOT_URL = "http://192.168.1.100:5000/";
+    private static final String TUTORBOT_URL = "http://192.168.157.254:5000/";
     private static final int FILE_CHOOSER_REQUEST = 1001;
     private static final int AUDIO_PERMISSION_REQUEST = 1002;
+    private static final int CAMERA_PERMISSION_REQUEST = 1003;
     private ValueCallback<Uri[]> filePathCallback;
+    private WebView webView;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        WebView webView = new WebView(this);
+        webView = new WebView(this);
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
@@ -36,6 +38,9 @@ public class MainActivity extends Activity {
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         settings.setSupportZoom(true);
+        settings.setGeolocationEnabled(true);
+        settings.setDatabaseEnabled(true);
+        settings.setDefaultFontSize(16);
 
         webView.setWebViewClient(new WebViewClient());
         webView.setWebChromeClient(new WebChromeClient() {
@@ -66,9 +71,28 @@ public class MainActivity extends Activity {
         setContentView(webView);
         webView.loadUrl(TUTORBOT_URL);
         requestAudioPermission();
+        requestCameraPermission();
     }
 
-    private void requestAudioPermission() {
+    @Override
+    public void onBackPressed() {
+        if (webView.canGoBack()) {
+            webView.goBack();
+        } else {
+            super.onBackPressed();
+        }
+    }
+
+    private void requestCameraPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+                    != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this,
+                        new String[]{Manifest.permission.CAMERA},
+                        CAMERA_PERMISSION_REQUEST);
+            }
+        }
+    }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
                     != PackageManager.PERMISSION_GRANTED) {

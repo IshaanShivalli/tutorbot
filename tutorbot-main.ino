@@ -63,12 +63,38 @@ void handleAsk() {
 
 void handleFileRoutes() {
   sendCorsHeaders();
-  String body = "{";
-  body += "\"upload_url\":\"" + pcUrl("/files") + "\",";
-  body += "\"list_url\":\"" + pcUrl("/files") + "\",";
-  body += "\"note\":\"Upload and download files directly to the PC URL for maximum speed. The ESP32 relays chat.\"";
-  body += "}";
-  server.send(200, "application/json", body);
+  if (server.method() == HTTP_POST) {
+    // Handle file upload relay
+    if (!server.hasArg("plain") && server.args() == 0) {
+      server.send(400, "application/json", "{\"error\":\"No file provided\"}");
+      return;
+    }
+    
+    if (WiFi.status() != WL_CONNECTED) {
+      server.send(503, "application/json", "{\"error\":\"ESP32 not connected to Wi-Fi\"}");
+      return;
+    }
+    
+    // Relay file upload to PC server
+    HTTPClient http;
+    http.setTimeout(180000);
+    http.begin(pcUrl("/files"));
+    http.addHeader("Content-Type", "multipart/form-data");
+    
+    int statusCode = http.POST(server.arg("plain"));
+    String response = http.getString();
+    http.end();
+    
+    server.send(statusCode, "application/json", response);
+  } else {
+    // GET request - return info about file operations
+    String body = "{";
+    body += "\"upload_url\":\"" + pcUrl("/files") + "\",";
+    body += "\"list_url\":\"" + pcUrl("/files") + "\",";
+    body += "\"note\":\"Files relay through ESP32 to PC. Upload directly to " + pcUrl("/files") + " for best speed.\"";
+    body += "}";
+    server.send(200, "application/json", body);
+  }
 }
 
 void setup() {

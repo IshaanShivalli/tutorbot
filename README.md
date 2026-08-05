@@ -19,6 +19,7 @@ TutorBot is a local AI tutor with a terminal UI, a mobile-friendly web interface
 - Python 3.9 or higher
 - Pip
 - A local GGUF model in `models/`
+- Tesseract OCR installed on your PC for OCR image processing
 - For Android builds: Android Studio
 - For ESP32 builds: Arduino IDE or PlatformIO with ESP32 board support
 
@@ -34,6 +35,8 @@ TutorBot needs at least one local GGUF model in `models/` before it can run.
 
 - Main chat model: `models/qwen2.5-0.5b-instruct-q4_k_m.gguf`
 - Lightweight image model: `models/llama-2-1.1b.gguf`
+
+The repository includes the packages needed for local execution and model downloads.
 
 If you do not already have the Hugging Face CLI installed, install it first:
 
@@ -72,6 +75,23 @@ python -m huggingface_hub download meta-llama/Llama-2-1.1B-GGUF --filename llama
 ```
 
 If you prefer, download the model files directly from Hugging Face and place them inside the `models/` folder.
+
+### Email verification setup
+
+If you want account registration and login verification to work properly, configure `EMAIL_FROM` to match the SMTP account used by `SMTP_USER` when using Gmail or other providers that require a verified sender address.
+
+Update `config.py` with your email server settings:
+
+```python
+EMAIL_FROM = "your-email@example.com"
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 587
+SMTP_USER = "your-email@example.com"
+SMTP_PASSWORD = "your-app-password"
+SMTP_USE_TLS = True
+```
+
+If email delivery fails, login and registration verification codes may not be sent, but the account will still be created locally.
 
 ## Terminal App
 

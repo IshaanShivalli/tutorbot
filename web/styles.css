@@ -37,7 +37,7 @@ textarea {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  width: min(100%, 980px);
+  width: min(100%, 1200px);
   margin: 0 auto;
   background: var(--panel);
   border: 1px solid rgba(255,255,255,0.05);
@@ -199,10 +199,35 @@ h1 {
   scroll-behavior: smooth;
 }
 
+.message-container {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  width: 100%;
+}
+
+.message-container.user {
+  justify-content: flex-end;
+}
+
+.message-container.user .message {
+  margin-left: auto;
+}
+
+.message-avatar {
+  font-size: 24px;
+  min-width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
 .message {
   width: fit-content;
-  max-width: min(90%, 820px);
-  margin: 0 0 20px;
+  max-width: min(85%, 700px);
   padding: 20px 22px;
   border: 1px solid var(--line);
   border-radius: 22px;
@@ -299,26 +324,116 @@ h1 {
   color: var(--text);
 }
 
-.file-row,
 .chat-form {
   display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  align-items: flex-end;
+  flex-direction: column;
+  gap: 0;
+  width: 100%;
 }
 
-.file-row {
-  margin-bottom: 12px;
-}
-
-.image-preview-row {
+.input-wrapper {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin-bottom: 12px;
+  gap: 12px;
+  width: 100%;
 }
 
-.image-preview,
+.input-wrapper > div:first-child {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  width: 100%;
+}
+
+#promptInput {
+  flex: 1;
+  min-height: 52px;
+  resize: vertical;
+  max-height: 280px;
+}
+
+.composer-actions {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+
+.dropdown-wrapper {
+  position: relative;
+}
+
+#uploadMenuButton {
+  min-width: 52px;
+  min-height: 52px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  background: rgba(61, 181, 185, 0.2);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+#uploadMenuButton:hover {
+  background: rgba(61, 181, 185, 0.3);
+  border-color: var(--accent);
+}
+
+#uploadMenuButton:active,
+#uploadMenuButton.active {
+  background: var(--accent);
+  border-color: var(--accent-strong);
+  color: #04110f;
+}
+
+.upload-menu {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+  min-width: 180px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 8px;
+  z-index: 20;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.upload-menu.hidden {
+  display: none;
+}
+
+.menu-item {
+  all: unset;
+  padding: 12px 14px;
+  font-size: 14px;
+  color: var(--text);
+  background: transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 120ms ease, color 120ms ease;
+  font-family: inherit;
+}
+
+.menu-item:hover {
+  background: rgba(61, 181, 185, 0.2);
+  color: var(--accent-strong);
+}
+
+.menu-item:active {
+  background: rgba(61, 181, 185, 0.3);
+}
+
 .camera-preview {
   width: 100%;
   max-height: 220px;
@@ -343,24 +458,6 @@ h1 {
 
 .camera-actions button {
   flex: 1 1 140px;
-}
-
-.image-hint {
-  color: var(--muted);
-  font-size: 13px;
-  margin: 0;
-}
-
-.file-input-label {
-  flex: 1 1 220px;
-  display: grid;
-  gap: 8px;
-  width: 100%;
-}
-
-.file-input-label span {
-  font-size: 13px;
-  color: var(--muted);
 }
 
 input,

@@ -5,11 +5,6 @@ const promptInput = document.querySelector("#promptInput");
 const sendButton = document.querySelector("#sendButton");
 const suggestions = document.querySelector("#suggestions");
 const fileInput = document.querySelector("#fileInput");
-const uploadButton = document.querySelector("#uploadButton");
-const processImageButton = document.querySelector("#processImageButton");
-const imagePreview = document.querySelector("#imagePreview");
-const imageHint = document.querySelector("#imageHint");
-const assetsButton = document.querySelector("#assetsButton");
 const filesPanel = document.querySelector("#filesPanel");
 const filesList = document.querySelector("#filesList");
 const closeFiles = document.querySelector("#closeFiles");
@@ -31,6 +26,17 @@ const closeFocusModal = document.querySelector("#closeFocusModal");
 const gradeSelect = document.querySelector("#gradeSelect");
 const subjectSelect = document.querySelector("#subjectSelect");
 const saveFocusButton = document.querySelector("#saveFocusButton");
+const cameraPanel = document.querySelector("#cameraPanel");
+const cameraPreview = document.querySelector("#cameraPreview");
+const captureButton = document.querySelector("#captureButton");
+const cancelCameraButton = document.querySelector("#cancelCameraButton");
+const uploadMenuButton = document.querySelector("#uploadMenuButton");
+const uploadMenu = document.querySelector("#uploadMenu");
+const menuUploadImage = document.querySelector("#menuUploadImage");
+const menuUseCamera = document.querySelector("#menuUseCamera");
+const menuProcessImage = document.querySelector("#menuProcessImage");
+const menuFiles = document.querySelector("#menuFiles");
+const filesInput = document.querySelector("#filesInput");
 
 let commands = [];
 let recognition = null;
@@ -136,6 +142,17 @@ function renderMarkdown(text) {
 }
 
 function addMessage(role, text, files = []) {
+  const container = document.createElement("div");
+  container.className = `message-container ${role}`;
+  
+  // Add avatar for assistant messages
+  if (role === "assistant" || role === "system") {
+    const avatar = document.createElement("div");
+    avatar.className = "message-avatar";
+    avatar.textContent = "🤖";
+    container.appendChild(avatar);
+  }
+  
   const bubble = document.createElement("div");
   bubble.className = `message ${role}`;
   bubble.innerHTML = renderMarkdown(text);
@@ -148,8 +165,9 @@ function addMessage(role, text, files = []) {
     link.rel = "noreferrer";
     bubble.appendChild(link);
   }
-
-  messages.appendChild(bubble);
+  
+  container.appendChild(bubble);
+  messages.appendChild(container);
   messages.scrollTop = messages.scrollHeight;
 }
 
@@ -161,9 +179,14 @@ function setStatus(text, warning = false) {
 async function loadStatus() {
   try {
     const response = await fetch("/health");
+    if (!response.ok) {
+      setStatus("TutorBot server not reachable", true);
+      return;
+    }
     const data = await response.json();
     setStatus(data.ok ? "Connected to TutorBot" : "TutorBot unavailable", !data.ok);
-  } catch {
+  } catch (error) {
+    console.error("Status check failed:", error);
     setStatus("TutorBot server not reachable", true);
   }
 }
@@ -310,38 +333,6 @@ function updateSpeechRecognitionLanguage() {
   recognition.lang = getLanguageCode(getSelectedLearningLanguage());
 }
 
-function previewSelectedImage() {
-  const file = fileInput.files?.[0];
-  if (!file) {
-    imagePreview.classList.add("hidden");
-    imageHint.classList.add("hidden");
-    return;
-  }
-
-  if (!file.type.startsWith("image/")) {
-    addMessage("error", "Please choose an image file to preview.");
-    imagePreview.classList.add("hidden");
-    imageHint.classList.add("hidden");
-    return;
-  }
-
-  const reader = new FileReader();
-  reader.onload = () => {
-    imagePreview.src = reader.result;
-    imagePreview.classList.remove("hidden");
-    imageHint.textContent = "Image ready to process. Click Process image to send it to TutorBot.";
-    imageHint.classList.remove("hidden");
-  };
-  reader.readAsDataURL(file);
-}
-
-function clearImagePreview() {
-  imagePreview.src = "";
-  imagePreview.classList.add("hidden");
-  imageHint.textContent = "";
-  imageHint.classList.add("hidden");
-}
-
 async function processSelectedImage() {
   const file = fileInput.files?.[0] || null;
   const imageFile = capturedImageBlob || file;
@@ -354,7 +345,6 @@ async function processSelectedImage() {
     return;
   }
 
-  processImageButton.disabled = true;
   addMessage("user", "[Image selected for processing]");
   addMessage("system", "Analyzing image...");
 
@@ -394,8 +384,6 @@ async function processSelectedImage() {
   } catch (error) {
     messages.lastChild.remove();
     addMessage("error", `Image request failed: ${error.message}`);
-  } finally {
-    processImageButton.disabled = false;
   }
 }
 
@@ -406,6 +394,37 @@ function speakText(text) {
   utterance.lang = getLanguageCode(getSelectedLearningLanguage());
   window.speechSynthesis.cancel();
   window.speechSynthesis.speak(utterance);
+}
+
+async function startCameraCapture() {
+  try {
+    cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+    cameraPreview.srcObject = cameraStream;
+    cameraPanel.classList.remove("hidden");
+  } catch (error) {
+    addMessage("error", `Camera access failed: ${error.message}`);
+  }
+}
+
+function stopCameraCapture() {
+  if (cameraStream) {
+    cameraStream.getTracks().forEach((track) => track.stop());
+    cameraStream = null;
+  }
+  cameraPanel.classList.add("hidden");
+}
+
+function captureCameraImage() {
+  const canvas = document.createElement("canvas");
+  canvas.width = cameraPreview.videoWidth;
+  canvas.height = cameraPreview.videoHeight;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(cameraPreview, 0, 0);
+  canvas.toBlob((blob) => {
+    capturedImageBlob = blob;
+    addMessage("user", "[Image captured from camera]");
+    stopCameraCapture();
+  }, "image/jpeg");
 }
 
 async function sendPrompt(prompt) {
@@ -462,16 +481,83 @@ promptInput.addEventListener("input", () => {
 });
 
 fileInput.addEventListener("change", () => {
-  clearImagePreview();
-  previewSelectedImage();
+  const file = fileInput.files[0];
+  if (file && file.type.startsWith("image/")) {
+    addMessage("user", `[Image selected: ${file.name}]`);
+    closeUploadMenu();
+  }
 });
-cameraButton.addEventListener("click", startCameraCapture);
+
+filesInput.addEventListener("change", async (event) => {
+  const files = event.target.files;
+  if (files.length > 0) {
+    addMessage("system", `Uploading ${files.length} file(s)...`);
+    for (let file of files) {
+      const formData = new FormData();
+      formData.append("file", file);
+      try {
+        const response = await fetch("/files", {
+          method: "POST",
+          body: formData
+        });
+        const data = await response.json();
+        if (data.filename) {
+          addMessage("system", `✅ Uploaded: ${data.filename}`);
+        }
+      } catch (error) {
+        addMessage("error", `Upload failed: ${error.message}`);
+      }
+    }
+    filesInput.value = "";
+  }
+});
+
+// Upload menu toggle
+uploadMenuButton.addEventListener("click", (event) => {
+  event.stopPropagation();
+  uploadMenu.classList.toggle("hidden");
+  uploadMenuButton.classList.toggle("active");
+});
+
+// Close menu when clicking outside
+document.addEventListener("click", (event) => {
+  if (!uploadMenu.contains(event.target) && event.target !== uploadMenuButton) {
+    uploadMenu.classList.add("hidden");
+    uploadMenuButton.classList.remove("active");
+  }
+});
+
+function closeUploadMenu() {
+  uploadMenu.classList.add("hidden");
+  uploadMenuButton.classList.remove("active");
+}
+
+// Menu item listeners
+menuUploadImage.addEventListener("click", () => {
+  fileInput.click();
+  closeUploadMenu();
+});
+
+menuUseCamera.addEventListener("click", () => {
+  startCameraCapture();
+  closeUploadMenu();
+});
+
+menuProcessImage.addEventListener("click", () => {
+  processSelectedImage();
+  closeUploadMenu();
+});
+
+menuFiles.addEventListener("click", () => {
+  filesInput.click();
+  closeUploadMenu();
+});
+
 captureButton.addEventListener("click", captureCameraImage);
 cancelCameraButton.addEventListener("click", () => {
   stopCameraCapture();
   addMessage("system", "Camera capture cancelled.");
 });
-processImageButton.addEventListener("click", processSelectedImage);
 
 voiceButton.addEventListener("click", () => {
   if (isListening) {
@@ -483,7 +569,6 @@ voiceButton.addEventListener("click", () => {
 
 ttsButton.addEventListener("click", toggleTts);
 closeFiles.addEventListener("click", hideFilesPanel);
-assetsButton.addEventListener("click", showFilesPanel);
 clearButton.addEventListener("click", async () => {
   try {
     await fetch("/clear", {method: "POST"});
@@ -491,36 +576,6 @@ clearButton.addEventListener("click", async () => {
     addMessage("system", "Conversation cleared.");
   } catch {
     addMessage("error", "Unable to clear chat on the server.");
-  }
-});
-
-uploadButton.addEventListener("click", async () => {
-  const file = fileInput.files[0];
-  if (!file) {
-    addMessage("error", "Choose a file first.");
-    return;
-  }
-
-  uploadButton.disabled = true;
-  const body = new FormData();
-  body.append("file", file);
-
-  try {
-    const response = await fetch("/files", {method: "POST", body});
-    const data = await response.json();
-    if (!response.ok) {
-      addMessage("error", data.error || "Upload failed.");
-      return;
-    }
-    addMessage("system", `Uploaded **${data.filename}** (${data.size} bytes).`, [
-      {name: data.filename, download_url: data.download_url},
-    ]);
-    fileInput.value = "";
-    loadFiles();
-  } catch (error) {
-    addMessage("error", `Upload failed: ${error.message}`);
-  } finally {
-    uploadButton.disabled = false;
   }
 });
 
@@ -644,3 +699,6 @@ if (!localStorage.getItem("tutorbot_grade") || !localStorage.getItem("tutorbot_s
 }
 loadStatus();
 loadCommands();
+
+// Check connection status every 2 seconds
+setInterval(loadStatus, 2000);
