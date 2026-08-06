@@ -13,6 +13,8 @@ import pytesseract
 import smtplib
 from email.mime.text import MIMEText
 import random
+from urllib.parse import quote
+import requests
 from config import SMTP_SERVER, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_USE_TLS, SYSTEM_PROMPT
 
 from vision_model import describe_image
@@ -21,6 +23,7 @@ from context_fetcher import get_context_for_topic
 from doc_generator import create_quiz_and_answer_key, create_quiz_document
 from quiz_generator import generate_quiz, reformat_quiz_for_doc
 from ui.commands import COMMANDS
+from ui import user_management, analytics, gamification
 
 verification_codes = {}
 
@@ -93,9 +96,64 @@ SUPPORTED_LANGUAGES = {
     "russian": "Russian",
 }
 
+GOOGLE_TRANSLATE_CODES = {
+    "english": "en",
+    "hindi": "hi",
+    "kannada": "kn",
+    "tamil": "ta",
+    "telugu": "te",
+    "malayalam": "ml",
+    "marathi": "mr",
+    "bengali": "bn",
+    "gujarati": "gu",
+    "spanish": "es",
+    "french": "fr",
+    "german": "de",
+    "portuguese": "pt",
+    "italian": "it",
+    "arabic": "ar",
+    "chinese": "zh-CN",
+    "japanese": "ja",
+    "korean": "ko",
+    "russian": "ru",
+}
 
-def tutorbot_reply(prompt: str, language: str = "English", profile: dict = None) -> str:
-    chat_history.append({"role": "user", "content": prompt})
+
+def normalize_language(language: str) -> str:
+    if not language:
+        return "English"
+    return SUPPORTED_LANGUAGES.get(str(language).strip().lower(), str(language).strip() or "English")
+
+
+def google_translate(text: str, target_language: str, source_language: str = "auto") -> str:
+    text = str(text or "")
+    target_language = normalize_language(target_language)
+    target_code = GOOGLE_TRANSLATE_CODES.get(target_language.lower(), "en")
+    source_code = GOOGLE_TRANSLATE_CODES.get(str(source_language).lower(), source_language or "auto")
+    if not text.strip() or target_code == source_code == "en":
+        return text
+    try:
+        url = (
+            "https://translate.googleapis.com/translate_a/single"
+            f"?client=gtx&sl={quote(source_code)}&tl={quote(target_code)}&dt=t&q={quote(text)}"
+        )
+        response = requests.get(url, timeout=12)
+        response.raise_for_status()
+        payload = response.json()
+        translated = "".join(part[0] for part in payload[0] if part and part[0])
+        return translated or text
+    except Exception as exc:
+        print(f"[Translate] Google Translate failed: {exc}")
+        return text
+
+
+def tutorbot_reply(prompt: str, language: str = "English", profile: dict = None, force_english: bool = False) -> str:
+    language = normalize_language(language)
+    english_prompt = prompt
+    if language.lower() != "english":
+        english_prompt = google_translate(prompt, "English", source_language=language)
+
+    chat_history.append({"role": "user", "content": english_prompt})
     request_prompt = SYSTEM_PROMPT
     if profile:
         grade = str(profile.get("grade", "Grade 9") or "Grade 9")
@@ -105,10 +163,11 @@ def tutorbot_reply(prompt: str, language: str = "English", profile: dict = None)
             "Tailor explanations, examples, and quiz challenges to this grade and subject focus. "
             "Keep responses aligned with the selected subject, and explain how other topics connect if needed."
         )
-    if language and language.lower() != "english":
-        request_prompt += f"\n\nAnswer the user in {language}. If the user asks in a different language, reply in that language."
+    request_prompt += "\n\nAlways produce the final answer in English. Do not translate it yourself."
     reply = ask_ai(chat_history, request_prompt, max_tokens=1024)
     chat_history.append({"role": "assistant", "content": reply})
+    if language.lower() != "english" and not force_english:
+        return google_translate(reply, language, source_language="English")
     return reply
 
 
@@ -150,8 +209,26 @@ def extract_image_text(image_path: Path) -> str:
     try:
         with Image.open(image_path) as image:
             image = image.convert("RGB")
-            ocr_result = pytesseract.image_to_string(image, lang="eng")
-            return ocr_result.strip()
+            variants = [image]
+            gray = image.convert("L")
+            variants.append(gray)
+            variants.append(gray.point(lambda px: 255 if px > 165 else 0))
+
+            results = []
+            for variant in variants:
+                try:
+                    text = pytesseract.image_to_string(
+                        variant,
+                        lang="eng",
+                        config="--oem 3 --psm 6",
+                    ).strip()
+                    if text:
+                        results.append(text)
+                except Exception:
+                    continue
+            if not results:
+                return ""
+            return max(results, key=len).strip()
     except Exception as exc:
         print(f"[Server] OCR failed: {exc}")
         return ""
@@ -177,6 +254,44 @@ def command_response(command_text: str, language: str = "English", profile: dict
         last_quiz_content = None
         last_quiz_doc_content = None
         return {"type": "system", "response": "Conversation cleared."}
+
+    if command_name == "/stats":
+        profile_state = gamification.get_profile(streak_count=int(profile.get("streak", 0) or 0))
+        weak_subject = profile.get("weakSubject") or profile.get("weak_subject") or "None"
+        lines = [
+            f"Level: {profile_state['level']} - {profile_state['title']} ({profile_state['xp']} XP)",
+            f"Current streak: {profile_state['streak']} day(s)",
+            f"Messages sent: {profile_state['messages_sent']}",
+            f"Quizzes generated: {profile_state['quizzes_generated']}",
+            f"Documents exported: {profile_state['docs_exported']}",
+            f"Searches run: {profile_state['searches_run']}",
+            f"Weak subject: {weak_subject}",
+            f"Spelling score: {profile.get('spellScore', 0)}",
+            f"Longest practice streak: {profile.get('longestStreak', 0)}",
+        ]
+        return {"type": "system", "response": "\n".join(lines)}
+
+    if command_name == "/report":
+        report = analytics.build_report(days=7)
+        lines = [
+            "Activity Report (last 7 days)",
+            "",
+            f"Messages sent: {report['messages_sent']}",
+            f"Quizzes generated: {report['quizzes_generated']}",
+            f"Documents exported: {report['docs_exported']}",
+            f"Searches run: {report['searches_run']}",
+        ]
+        if report.get("first_used"):
+            lines.append(f"Tracking since: {report['first_used']}")
+        if report.get("top_topics"):
+            lines.append("")
+            lines.append("Top quiz topics:")
+            lines.extend(f"- {topic.title()} ({count})" for topic, count in report["top_topics"])
+        if report.get("performance_graph"):
+            lines.append("")
+            lines.append("Performance graph:")
+            lines.extend(report["performance_graph"])
+        return {"type": "system", "response": "\n".join(lines)}
 
     if command_name == "/model":
         return {
@@ -331,11 +446,13 @@ def process_image():
     image_description = describe_image(saved_path)
 
     image_prompt = (
-        "I have processed an image and generated a description of what is visible. "
-        "Use that description and any OCR text to explain the image clearly for the student. "
+        "I have processed an uploaded image using OCR and layout analysis. "
+        "Explain only what is supported by the OCR text and layout summary. "
+        "If OCR text contains a question, solve it step by step. "
+        "If OCR is weak, say what information is missing and ask for a clearer photo. "
         f"Image description:\n{image_description}\n\n"
         f"OCR text extracted from the image:\n{ocr_text}\n\n"
-        "If the image contains diagrams, charts, or text, summarize what it shows in an educational way. "
+        "Summarize what the image likely contains in an educational way. "
         "Keep the response aligned with the student's grade and subject focus."
     )
 
@@ -376,35 +493,35 @@ def ai_chat():
     data = request.get_json(silent=True) or {}
     prompt = data.get("prompt") or data.get("message") or data.get("text")
     language = data.get("language")
+    interface_language = normalize_language(data.get("interfaceLanguage") or data.get("appLanguage") or "English")
 
     if not isinstance(prompt, str) or not prompt.strip():
         return jsonify({"error": "JSON field 'prompt' is required"}), 400
 
     prompt = prompt.strip()
-    language = str(language).strip() if isinstance(language, str) else ""
+    language = normalize_language(str(language).strip() if isinstance(language, str) else "English")
+    force_english = language.lower() != "english" and language.lower() == interface_language.lower()
 
     try:
         if prompt.startswith("/"):
-            return jsonify(command_response(prompt, language=language or "English", profile=data.get("profile")))
-
-        if language and language.lower() != "english":
-            return jsonify(
-                {
-                    "type": "assistant",
-                    "response": tutorbot_reply(
-                        prompt,
-                        language=language,
-                        profile=data.get("profile"),
-                    ),
-                }
-            )
+            result = command_response(prompt, language=language or "English", profile=data.get("profile"))
+            if (
+                isinstance(result, dict)
+                and isinstance(result.get("response"), str)
+                and language.lower() != "english"
+                and not force_english
+            ):
+                result["response"] = google_translate(result["response"], language, source_language="English")
+            return jsonify(result)
 
         return jsonify(
             {
                 "type": "assistant",
                 "response": tutorbot_reply(
                     prompt,
+                    language=language,
                     profile=data.get("profile"),
+                    force_english=force_english,
                 ),
             }
         )
@@ -526,6 +643,35 @@ def api_verify_otp():
         return jsonify({"ok": True})
     else:
         return jsonify({"error": "Invalid verification code"}), 400
+
+
+@app.get("/api/survey-questions")
+def api_survey_questions():
+    return jsonify({"questions": user_management.get_survey_questions()})
+
+
+@app.post("/api/survey-questions")
+def api_set_survey_questions():
+    data = request.get_json(silent=True) or {}
+    try:
+        questions = user_management.set_survey_questions(data.get("questions", []))
+        return jsonify({"ok": True, "questions": questions})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.post("/api/user-profile")
+def api_user_profile():
+    data = request.get_json(silent=True) or {}
+    username = str(data.get("username", "")).strip().lower()
+    profile = data.get("profile") or {}
+    if not username:
+        return jsonify({"error": "Username is required"}), 400
+    try:
+        user = user_management.update_user_profile(username, **profile)
+        return jsonify({"ok": True, "user": user})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
 
 
 if __name__ == "__main__":

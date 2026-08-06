@@ -267,6 +267,54 @@ def get_user(username: str) -> dict[str, Any] | None:
     return data["users"].get(username.strip().lower())
 
 
+def update_user_profile(username: str, **fields: Any) -> dict[str, Any]:
+    data = _load_data()
+    key = username.strip().lower()
+    user = data["users"].get(key)
+    if not user:
+        user = _default_user(key, role="student", email=key if "@" in key else "")
+        user["verified"] = True
+        data["users"][key] = user
+    user.update(fields)
+    user["last_active"] = datetime.utcnow().isoformat() + "Z"
+    _save_data(data)
+    return user
+
+
+def get_survey_questions() -> list[dict[str, Any]]:
+    data = _load_data()
+    questions = data.get("survey_questions")
+    if isinstance(questions, list) and questions:
+        return questions
+    return [
+        {"key": "grade", "label": "Grade level", "type": "select"},
+        {"key": "subject", "label": "Preferred subject", "type": "select"},
+        {"key": "weak_subject", "label": "Weakest subject", "type": "text"},
+    ]
+
+
+def set_survey_questions(questions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    data = _load_data()
+    cleaned = []
+    for question in questions:
+        key = str(question.get("key", "")).strip()
+        label = str(question.get("label", "")).strip()
+        if key and label:
+            cleaned.append(
+                {
+                    "key": key,
+                    "label": label,
+                    "type": str(question.get("type", "text")).strip() or "text",
+                    "options": question.get("options", []),
+                }
+            )
+    if not cleaned:
+        raise ValueError("At least one survey question is required")
+    data["survey_questions"] = cleaned
+    _save_data(data)
+    return cleaned
+
+
 def set_user_role(username: str, role: str) -> dict[str, Any]:
     if role not in ("student", "admin", "guest"):
         raise ValueError("Invalid role")

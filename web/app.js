@@ -19,6 +19,8 @@ const teacherPassingRate = document.getElementById("teacherPassingRate");
 
 const messagesEl = document.getElementById("messages");
 const emptyState = document.getElementById("emptyState");
+const chatHistoryList = document.getElementById("chatHistoryList");
+const newChatButton = document.getElementById("newChatButton");
 const chatForm = document.getElementById("chatForm");
 const promptInput = document.getElementById("promptInput");
 const sendButton = document.getElementById("sendButton");
@@ -50,6 +52,7 @@ const ssidInput = document.getElementById("ssidInput");
 const passwordInput = document.getElementById("passwordInput");
 const languageSelect = document.getElementById("languageSelect");
 const learningLanguageSelect = document.getElementById("learningLanguageSelect");
+const surveyQuestionsInput = document.getElementById("surveyQuestionsInput");
 
 const changeFocusButton = document.getElementById("changeFocusButton");
 const focusModal = document.getElementById("focusModal");
@@ -67,13 +70,51 @@ let ttsEnabled = false;
 let mediaStream = null;
 let profile = loadJSON("tb_profile", { grade: "Grade 9", subject: "General" });
 let settings = loadJSON("tb_settings", { language: "English", learningLanguage: "English", ssid: "", password: "", theme: "dark" });
+let surveyQuestions = [];
+let activeChatId = localStorage.getItem(`tb_active_chat_${currentAccount()}`) || "";
+
+function currentAccount() {
+  const session = localStorage.getItem("tb_session");
+  const username = (localStorage.getItem("tb_username") || "").trim().toLowerCase();
+  return session === "active" && username ? username : "guest";
+}
+
+function accountKey(key) {
+  return key.startsWith("tb_account_") ? key : `tb_account_${currentAccount()}_${key}`;
+}
 
 function applyTheme(theme) {
+  const customControls = document.getElementById("customThemeControls");
+  document.body.removeAttribute("style");
+  document.body.classList.remove("light-theme");
+
   if (theme === "light") {
     document.body.classList.add("light-theme");
-  } else {
-    document.body.classList.remove("light-theme");
+    if (customControls) customControls.style.display = "none";
+  } else if (theme === "dark") {
+    if (customControls) customControls.style.display = "none";
+  } else if (theme === "custom") {
+    if (customControls) customControls.style.display = "block";
+    const ct = settings.customTheme || {
+      ink: "#0a0812",
+      panel: "#1c1830",
+      chalk: "#a855f7",
+      text: "#f5f2fa"
+    };
+    document.body.style.setProperty("--ink", ct.ink);
+    document.body.style.setProperty("--panel", ct.panel + "cc");
+    document.body.style.setProperty("--panel-2", ct.panel);
+    document.body.style.setProperty("--chalk", ct.chalk);
+    document.body.style.setProperty("--chalk-soft", ct.chalk + "26");
+    document.body.style.setProperty("--text", ct.text);
+    document.body.style.setProperty("--muted", ct.text + "aa");
+    
+    document.getElementById("colorInk").value = ct.ink;
+    document.getElementById("colorPanel").value = ct.panel;
+    document.getElementById("colorChalk").value = ct.chalk;
+    document.getElementById("colorText").value = ct.text;
   }
+
   const themeSelect = document.getElementById("themeSelect");
   if (themeSelect) {
     themeSelect.value = theme;
@@ -155,8 +196,10 @@ if (authForm) {
         if (data.ok) {
           localStorage.setItem("tb_session", "active");
           localStorage.setItem("tb_username", user);
+          reloadAccountState();
           if (authOverlay) authOverlay.classList.add("hidden");
           addMessage("system", `Authenticated successfully via Gmail SMTP OTP as ${user}.`);
+          maybeShowSurvey();
         } else {
           alert("Error: " + (data.error || "Invalid OTP code."));
           authSubmitButton.textContent = "Verify & Login";
@@ -195,14 +238,149 @@ if (btnCreateSplitQuiz) {
 
 function loadJSON(key, fallback) {
   try {
-    const raw = localStorage.getItem(key);
+    const raw = localStorage.getItem(accountKey(key)) || localStorage.getItem(key);
     return raw ? JSON.parse(raw) : fallback;
   } catch {
     return fallback;
   }
 }
 function saveJSON(key, value) {
-  try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+  try { localStorage.setItem(accountKey(key), JSON.stringify(value)); } catch {}
+}
+
+function getChats() {
+  return loadJSON("tb_chats", []);
+}
+
+function saveChats(chats) {
+  saveJSON("tb_chats", chats);
+}
+
+function ensureActiveChat() {
+  let chats = getChats();
+  if (!activeChatId || !chats.some((chat) => chat.id === activeChatId)) {
+    const chat = { id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), title: "New chat", messages: [], createdAt: Date.now(), updatedAt: Date.now() };
+    chats.unshift(chat);
+    activeChatId = chat.id;
+    localStorage.setItem(`tb_active_chat_${currentAccount()}`, activeChatId);
+    saveChats(chats);
+  }
+  return getChats().find((chat) => chat.id === activeChatId);
+}
+
+function saveMessageToActiveChat(role, text, files) {
+  if (role === "command") return;
+  let chats = getChats();
+  let chat = chats.find((item) => item.id === activeChatId);
+  if (!chat) {
+    ensureActiveChat();
+    chats = getChats();
+    chat = chats.find((item) => item.id === activeChatId);
+  }
+  if (!chat) return;
+  chat.messages.push({ role, text, files: files || [], timestamp: Date.now() });
+  if (chat.title === "New chat" && role === "user" && text) {
+    chat.title = text.slice(0, 42);
+  }
+  chat.updatedAt = Date.now();
+  saveChats(chats);
+  renderChatSidebar();
+}
+
+function renderChatSidebar() {
+  if (!chatHistoryList) return;
+  const chats = getChats();
+  if (!chats.length) {
+    chatHistoryList.innerHTML = `<div class="chat-history-empty">No chats yet</div>`;
+    return;
+  }
+  chatHistoryList.innerHTML = "";
+  chats.forEach((chat) => {
+    const row = document.createElement("div");
+    row.className = "chat-history-item";
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = `chat-history-open ${chat.id === activeChatId ? "active" : ""}`;
+    open.textContent = chat.title || "New chat";
+    open.addEventListener("click", () => loadChat(chat.id));
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "chat-history-delete";
+    del.textContent = "×";
+    del.title = "Delete chat";
+    del.addEventListener("click", (event) => {
+      event.stopPropagation();
+      deleteChat(chat.id);
+    });
+    row.append(open, del);
+    chatHistoryList.appendChild(row);
+  });
+}
+
+function loadChat(chatId) {
+  const chats = getChats();
+  const chat = chats.find((item) => item.id === chatId);
+  if (!chat) return;
+  activeChatId = chat.id;
+  localStorage.setItem(`tb_active_chat_${currentAccount()}`, activeChatId);
+  messagesEl.innerHTML = "";
+  messagesEl.appendChild(emptyState);
+  emptyState.style.display = "";
+  (chat.messages || []).forEach((message) => addMessage(message.role, message.text, message.files, { skipSave: true }));
+  renderChatSidebar();
+}
+
+function startNewChat() {
+  const chats = getChats();
+  const chat = { id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), title: "New chat", messages: [], createdAt: Date.now(), updatedAt: Date.now() };
+  chats.unshift(chat);
+  activeChatId = chat.id;
+  localStorage.setItem(`tb_active_chat_${currentAccount()}`, activeChatId);
+  saveChats(chats);
+  messagesEl.innerHTML = "";
+  messagesEl.appendChild(emptyState);
+  emptyState.style.display = "";
+  renderChatSidebar();
+}
+
+function maybeStartNewChat() {
+  const chats = getChats();
+  const activeChat = chats.find((item) => item.id === activeChatId);
+  if (!activeChat || activeChat.title !== "New chat") {
+    startNewChat();
+  }
+}
+
+function deleteChat(chatId) {
+  let chats = getChats().filter((chat) => chat.id !== chatId);
+  saveChats(chats);
+  if (activeChatId === chatId) {
+    activeChatId = chats[0]?.id || "";
+    if (activeChatId) loadChat(activeChatId);
+    else startNewChat();
+  } else {
+    renderChatSidebar();
+  }
+}
+
+function reloadAccountState() {
+  profile = loadJSON("tb_profile", { grade: "Grade 9", subject: "General" });
+  settings = loadJSON("tb_settings", { language: "English", learningLanguage: "English", ssid: "", password: "", theme: "dark" });
+  applyTheme(settings.theme || "dark");
+  updateProfileText();
+  checkStreak();
+}
+
+async function saveProfileToServer() {
+  const username = currentAccount();
+  if (!username || username === "guest" || localStorage.getItem("tb_session") !== "active") return;
+  try {
+    await fetch("/api/user-profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, profile }),
+    });
+  } catch {}
 }
 
 function speechCode(language) {
@@ -247,8 +425,12 @@ function hideEmptyState() {
   if (emptyState) emptyState.style.display = "none";
 }
 
-function addMessage(role, text, files) {
+function addMessage(role, text, files, options = {}) {
   hideEmptyState();
+  if (!options.skipSave) {
+    saveLogToHistory(role, text);
+    saveMessageToActiveChat(role, text, files);
+  }
   const row = document.createElement("div");
   row.className = `msg-row ${role === "user" ? "user" : ""}`;
 
@@ -300,12 +482,37 @@ function speak(text) {
   if (!("speechSynthesis" in window)) return;
   window.speechSynthesis.cancel();
   const utter = new SpeechSynthesisUtterance(text.replace(/```[\s\S]*?```/g, ""));
+  utter.rate = 0.78;
+  utter.pitch = 1;
   window.speechSynthesis.speak(utter);
+}
+
+function saveLogToHistory(role, text) {
+  try {
+    const logs = loadJSON("tb_chat_logs", []);
+    logs.push({
+      role: role,
+      text: text,
+      timestamp: new Date().toLocaleTimeString()
+    });
+    saveJSON("tb_chat_logs", logs.slice(-100));
+  } catch (e) {}
 }
 
 async function sendPrompt(text) {
   if (!text.trim()) return;
-  addMessage("user", text);
+  const isCommand = text.startsWith("/");
+  if (isCommand && text.trim() === "/clear") {
+    promptInput.value = "";
+    autoGrow();
+    clearActiveChat();
+    return;
+  }
+  if (!isCommand) {
+    addMessage("user", text);
+  } else {
+    saveLogToHistory("command", text);
+  }
   promptInput.value = "";
   autoGrow();
   sendButton.disabled = true;
@@ -318,6 +525,7 @@ async function sendPrompt(text) {
       body: JSON.stringify({
         prompt: text,
         language: settings.learningLanguage,
+        interfaceLanguage: settings.language,
         profile: { grade: profile.grade, subject: profile.subject },
       }),
     });
@@ -393,11 +601,21 @@ function loadSuggestions() {
     .catch(() => {});
 }
 
-clearButton.addEventListener("click", async () => {
-  await fetch("/clear", { method: "POST" }).catch(() => {});
+function clearActiveChat() {
+  const chats = getChats();
+  const chat = chats.find((item) => item.id === activeChatId);
+  if (!chat) return;
+  chat.messages = [];
+  chat.updatedAt = Date.now();
+  saveChats(chats);
   messagesEl.innerHTML = "";
   messagesEl.appendChild(emptyState);
   emptyState.style.display = "";
+  renderChatSidebar();
+}
+
+clearButton.addEventListener("click", () => {
+  clearActiveChat();
 });
 
 uploadMenuButton.addEventListener("click", (e) => {
@@ -562,11 +780,33 @@ settingsButton.addEventListener("click", () => {
   languageSelect.value = settings.language;
   learningLanguageSelect.value = settings.learningLanguage;
   const themeSelect = document.getElementById("themeSelect");
-  if (themeSelect) themeSelect.value = settings.theme || "dark";
+  if (themeSelect) {
+    themeSelect.value = settings.theme || "dark";
+    document.getElementById("customThemeControls").style.display = (settings.theme === "custom") ? "block" : "none";
+  }
+  if (surveyQuestionsInput) {
+    fetch("/api/survey-questions")
+      .then((r) => r.json())
+      .then((data) => {
+        surveyQuestions = data.questions || [];
+        surveyQuestionsInput.value = surveyQuestions.map((q) => q.label || q.key).join("\n");
+      })
+      .catch(() => {
+        surveyQuestionsInput.value = "Grade level\nPreferred subject\nWeakest subject";
+      });
+  }
   settingsPanel.classList.remove("hidden");
   settingsPanel.classList.add("open");
   settingsPanel.setAttribute("aria-hidden", "false");
 });
+
+const themeSelectEl = document.getElementById("themeSelect");
+if (themeSelectEl) {
+  themeSelectEl.addEventListener("change", (e) => {
+    document.getElementById("customThemeControls").style.display = (e.target.value === "custom") ? "block" : "none";
+  });
+}
+
 closeSettings.addEventListener("click", () => {
   settingsPanel.classList.remove("open");
   settingsPanel.classList.add("hidden");
@@ -580,6 +820,14 @@ saveSettings.addEventListener("click", async () => {
   const themeSelect = document.getElementById("themeSelect");
   if (themeSelect) {
     settings.theme = themeSelect.value;
+    if (settings.theme === "custom") {
+      settings.customTheme = {
+        ink: document.getElementById("colorInk").value,
+        panel: document.getElementById("colorPanel").value,
+        chalk: document.getElementById("colorChalk").value,
+        text: document.getElementById("colorText").value
+      };
+    }
     applyTheme(settings.theme);
   }
   saveJSON("tb_settings", settings);
@@ -592,6 +840,27 @@ saveSettings.addEventListener("click", async () => {
         body: JSON.stringify({ ssid: settings.ssid, password: settings.password }),
       });
     } catch {}
+  }
+  if (surveyQuestionsInput) {
+    const questions = surveyQuestionsInput.value
+      .split(/\r?\n/)
+      .map((line, index) => line.trim())
+      .filter(Boolean)
+      .map((label, index) => ({
+        key: index === 0 ? "grade" : index === 1 ? "subject" : index === 2 ? "weak_subject" : `question_${index + 1}`,
+        label,
+        type: index < 2 ? "select" : "text",
+      }));
+    if (questions.length) {
+      try {
+        await fetch("/api/survey-questions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ questions }),
+        });
+        surveyQuestions = questions;
+      } catch {}
+    }
   }
   settingsPanel.classList.remove("open");
   settingsPanel.classList.add("hidden");
@@ -613,6 +882,7 @@ saveFocusButton.addEventListener("click", () => {
   profile.grade = gradeSelect.value;
   profile.subject = subjectSelect.value;
   saveJSON("tb_profile", profile);
+  saveProfileToServer();
   updateProfileText();
   focusModal.classList.add("hidden");
   focusModal.setAttribute("aria-hidden", "true");
@@ -676,10 +946,13 @@ const spellWordLists = {
 };
 
 function speakWord(word) {
-  if (!word || !("speechSynthesis" in window)) return;
+  const spokenWord = String(word || "").trim();
+  if (!spokenWord || !("speechSynthesis" in window)) return;
   window.speechSynthesis.cancel();
-  const utter = new SpeechSynthesisUtterance(word);
+  const utter = new SpeechSynthesisUtterance(spokenWord);
   utter.lang = "en-US";
+  utter.rate = 0.65;
+  utter.pitch = 1;
   window.speechSynthesis.speak(utter);
 }
 
@@ -710,7 +983,7 @@ if (spellButton && spellModal) {
   });
 
   spellHearBtn.addEventListener("click", () => {
-    speakWord(currentSpellWord);
+    speakWord(spellInput.value || currentSpellWord);
   });
 
   spellCheckBtn.addEventListener("click", () => {
@@ -732,11 +1005,255 @@ if (spellButton && spellModal) {
     }
     spellScoreEl.textContent = spellScore;
     spellStreakEl.textContent = spellStreak;
+    
+    // Save to profile
+    profile.spellScore = spellScore;
+    if (spellStreak > (profile.longestStreak || 0)) {
+      profile.longestStreak = spellStreak;
+    }
+    saveJSON("tb_profile", profile);
+    saveProfileToServer();
   });
 
   spellNextBtn.addEventListener("click", () => {
     getNextSpellWord();
     spellInput.focus();
+  });
+}
+
+// Dictation Mode handlers
+const dictateButton = document.getElementById("dictateButton");
+const dictationModal = document.getElementById("dictationModal");
+const closeDictationModal = document.getElementById("closeDictationModal");
+const dictationHearBtn = document.getElementById("dictationHearBtn");
+const dictationInput = document.getElementById("dictationInput");
+const dictationFeedback = document.getElementById("dictationFeedback");
+const dictationStartBtn = document.getElementById("dictationStartBtn");
+const dictationNextBtn = document.getElementById("dictationNextBtn");
+const dictationTimerEl = document.getElementById("dictationTimer");
+const dictationStreakEl = document.getElementById("dictationStreak");
+
+let dictationTimer = 10;
+let dictationInterval = null;
+let dictationStreak = 0;
+let currentDictationWord = "";
+
+function startDictationTimer() {
+  clearInterval(dictationInterval);
+  dictationTimer = 10;
+  dictationTimerEl.textContent = dictationTimer + "s";
+  dictationInterval = setInterval(() => {
+    dictationTimer--;
+    dictationTimerEl.textContent = dictationTimer + "s";
+    if (dictationTimer <= 0) {
+      clearInterval(dictationInterval);
+      dictationStreak = 0;
+      dictationStreakEl.textContent = dictationStreak;
+      dictationFeedback.textContent = `✗ Time's Up! The word was "${currentDictationWord}".`;
+      dictationFeedback.className = "spell-feedback incorrect";
+      dictationStartBtn.classList.add("hidden");
+      dictationNextBtn.classList.remove("hidden");
+    }
+  }, 1000);
+}
+
+function nextDictationWord() {
+  const grade = profile.grade || "Grade 9";
+  const list = spellWordLists[grade] || spellWordLists["Grade 9"];
+  currentDictationWord = list[Math.floor(Math.random() * list.length)];
+  dictationInput.value = "";
+  dictationFeedback.textContent = "";
+  dictationFeedback.className = "spell-feedback";
+  dictationNextBtn.classList.add("hidden");
+  dictationStartBtn.classList.remove("hidden");
+  dictationStartBtn.textContent = "Check Spelling";
+  speakWord(currentDictationWord);
+  startDictationTimer();
+}
+
+if (dictateButton && dictationModal) {
+  dictateButton.addEventListener("click", () => {
+    dictationModal.classList.remove("hidden");
+    dictationModal.setAttribute("aria-hidden", "false");
+    nextDictationWord();
+  });
+  
+  closeDictationModal.addEventListener("click", () => {
+    dictationModal.classList.add("hidden");
+    dictationModal.setAttribute("aria-hidden", "true");
+    clearInterval(dictationInterval);
+    window.speechSynthesis?.cancel();
+  });
+  
+  dictationHearBtn.addEventListener("click", () => {
+    speakWord(currentDictationWord);
+  });
+  
+  dictationStartBtn.addEventListener("click", () => {
+    if (dictationStartBtn.textContent === "Start Session") {
+      nextDictationWord();
+      return;
+    }
+    const val = dictationInput.value.trim().toLowerCase();
+    if (!val) return;
+    clearInterval(dictationInterval);
+    if (val === currentDictationWord.toLowerCase()) {
+      dictationStreak++;
+      dictationFeedback.textContent = "✓ Correct spelling!";
+      dictationFeedback.className = "spell-feedback correct";
+    } else {
+      dictationStreak = 0;
+      dictationFeedback.textContent = `✗ Incorrect. It is "${currentDictationWord}".`;
+      dictationFeedback.className = "spell-feedback incorrect";
+    }
+    dictationStreakEl.textContent = dictationStreak;
+    if (dictationStreak > (profile.longestStreak || 0)) {
+      profile.longestStreak = dictationStreak;
+      saveJSON("tb_profile", profile);
+      saveProfileToServer();
+    }
+    dictationStartBtn.classList.add("hidden");
+    dictationNextBtn.classList.remove("hidden");
+  });
+  
+  dictationNextBtn.addEventListener("click", () => {
+    nextDictationWord();
+    dictationInput.focus();
+  });
+}
+
+// Survey System
+const surveyModal = document.getElementById("surveyModal");
+const submitSurvey = document.getElementById("submitSurvey");
+function maybeShowSurvey() {
+  if (surveyModal && !profile.surveyFilled) {
+    fetch("/api/survey-questions")
+      .then((r) => r.json())
+      .then((data) => {
+        const questions = data.questions || [];
+        const labels = surveyModal.querySelectorAll(".field-label");
+        questions.slice(0, 3).forEach((q, index) => {
+          const field = labels[index];
+          if (field && q.label) {
+            const control = field.querySelector("input, select");
+            field.firstChild.textContent = q.label;
+            if (control && !field.contains(control)) field.appendChild(control);
+          }
+        });
+      })
+      .catch(() => {});
+    surveyModal.classList.remove("hidden");
+    surveyModal.setAttribute("aria-hidden", "false");
+  }
+}
+if (surveyModal && submitSurvey) {
+  submitSurvey.addEventListener("click", () => {
+    profile.grade = document.getElementById("surveyGrade").value;
+    profile.subject = document.getElementById("surveySubject").value;
+    profile.weakSubject = document.getElementById("surveyWeakSubject").value || "None";
+    profile.surveyFilled = true;
+    saveJSON("tb_profile", profile);
+    surveyModal.classList.add("hidden");
+    updateProfileText();
+    addMessage("system", `Survey saved! Learning focus set to ${profile.grade} · ${profile.subject}.`);
+  });
+  
+  // Show survey if not filled
+  setTimeout(() => {
+    maybeShowSurvey();
+  }, 1000);
+}
+
+// Streak System
+function checkStreak() {
+  const today = new Date().toDateString();
+  const lastActive = profile.lastActiveDate;
+  let streak = profile.streak || 0;
+  
+  if (!lastActive) {
+    streak = 1;
+  } else {
+    const diffTime = Math.abs(new Date(today) - new Date(lastActive));
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    if (diffDays === 1) {
+      streak += 1;
+    } else if (diffDays > 1) {
+      streak = 1;
+    }
+  }
+  profile.streak = streak;
+  profile.lastActiveDate = today;
+  saveJSON("tb_profile", profile);
+  saveProfileToServer();
+  
+  const streakDisplay = document.getElementById("streakDisplay");
+  const streakVal = document.getElementById("streakVal");
+  if (streakDisplay && streakVal) {
+    streakVal.textContent = streak;
+    streakDisplay.style.display = "inline";
+  }
+}
+checkStreak();
+
+// History & Analysis modal
+const historyButton = document.getElementById("historyButton");
+const historyModal = document.getElementById("historyModal");
+const closeHistoryModal = document.getElementById("closeHistoryModal");
+const tabStatsBtn = document.getElementById("tabStatsBtn");
+const tabHistoryBtn = document.getElementById("tabHistoryBtn");
+const historyStatsTab = document.getElementById("historyStatsTab");
+const historyLogsTab = document.getElementById("historyLogsTab");
+const historyLogsList = document.getElementById("historyLogsList");
+
+if (historyButton && historyModal) {
+  historyButton.addEventListener("click", () => {
+    // Populate stats
+    document.getElementById("analysisSpellScore").textContent = profile.spellScore || 0;
+    document.getElementById("analysisStreak").textContent = profile.longestStreak || 0;
+    
+    let recommendation = "Keep studying to unlock recommendations!";
+    if (profile.weakSubject && profile.weakSubject !== "None") {
+      recommendation = `We notice you struggle with **${profile.weakSubject}**. Ask TutorBot: "Can you explain ${profile.weakSubject} with a simple example?" or type "/quiz ${profile.weakSubject}".`;
+    } else if (profile.subject) {
+      recommendation = `Focus on **${profile.subject}**! Click the Quiz button above to take a quick practice assessment.`;
+    }
+    document.getElementById("analysisRecommendation").innerHTML = renderInline(recommendation);
+    
+    // Populate chat logs
+    historyLogsList.innerHTML = "";
+    const logs = loadJSON("tb_chat_logs", []);
+    if (!logs.length) {
+      historyLogsList.innerHTML = `<li class="log-item" style="color:var(--muted); text-align:center;">No history recorded yet.</li>`;
+    } else {
+      logs.forEach(log => {
+        const li = document.createElement("li");
+        li.className = "log-item";
+        li.innerHTML = `<div class="log-time">[${log.timestamp}] ${log.role.toUpperCase()}</div><div>${escapeHTML(log.text)}</div>`;
+        historyLogsList.appendChild(li);
+      });
+    }
+    
+    historyModal.classList.remove("hidden");
+    historyModal.setAttribute("aria-hidden", "false");
+  });
+  
+  closeHistoryModal.addEventListener("click", () => {
+    historyModal.classList.add("hidden");
+    historyModal.setAttribute("aria-hidden", "true");
+  });
+  
+  tabStatsBtn.addEventListener("click", () => {
+    tabStatsBtn.classList.add("active");
+    tabHistoryBtn.classList.remove("active");
+    historyStatsTab.classList.remove("hidden");
+    historyLogsTab.classList.add("hidden");
+  });
+  
+  tabHistoryBtn.addEventListener("click", () => {
+    tabHistoryBtn.classList.add("active");
+    tabStatsBtn.classList.remove("active");
+    historyLogsTab.classList.remove("hidden");
+    historyStatsTab.classList.add("hidden");
   });
 }
 
@@ -746,5 +1263,8 @@ function loadSuggestions() {
 
 updateProfileText();
 checkHealth();
+ensureActiveChat();
+loadChat(activeChatId);
+if (newChatButton) newChatButton.addEventListener("click", maybeStartNewChat);
 initCommandButtons();
 setInterval(checkHealth, 30000);

@@ -22,9 +22,12 @@ from config import SYSTEM_PROMPT
 from quiz_generator import generate_quiz ,reformat_quiz_for_doc 
 from doc_generator import create_quiz_document ,create_quiz_and_answer_key 
 from context_fetcher import get_context_for_topic 
+from vision_model import describe_image
+from Server import extract_image_text
 from .streak import update_streak_for_user
 from . import gamification ,analytics ,user_management 
 from .commands import COMMANDS ,find_command ,suggest_commands ,render_help_text 
+from Server import google_translate, normalize_language
 
 
 MAX_QUIZ_QUESTIONS =20 
@@ -190,6 +193,7 @@ class TutorBotApp (App ):
         self .message_count =0 
         self .quiz_count =0 
         self .preferred_language ="English"
+        self .interface_language ="English"
         self .current_user =user_management .get_current_user ()
 
 
@@ -401,7 +405,7 @@ class TutorBotApp (App ):
         if not argument .strip ():
             self .add_message ("error","Usage: /language <language>")
             return 
-        self .preferred_language =argument .strip ()
+        self .preferred_language =normalize_language (argument .strip ())
         self .add_message (
         "system",
         f"Preferred response language set to [bold]{self.preferred_language}[/bold] for this terminal session.",
@@ -673,6 +677,150 @@ class TutorBotApp (App ):
         except Exception as e :
             self .add_message ("error",f"Could not set weak subject: {e}")
 
+    def _spell_words (self ):
+        return {
+        "Grade 6":["abandon","behavior","chronology","dialogue","endeavor","fantastic","geometry","horizon"],
+        "Grade 7":["accommodation","beneficial","characteristic","differentiate","enthusiasm","fluctuation"],
+        "Grade 8":["achievement","belligerent","conspicuous","deteriorate","exaggerate","formidable"],
+        "Grade 9":["aesthetic","benevolent","cacophony","deference","ephemeral","fortuitous","gregarious"],
+        "Grade 10":["acquiesce","capricious","dichotomy","equivocal","fastidious","harangue"],
+        "Grade 11":["anachronism","camaraderie","deleterious","facetious","grandiloquent","mendacious"],
+        "Grade 12":["chicanery","desultory","egregious","fecund","insidious","mellifluous"],
+        "College":["anathema","bilious","crepuscular","diaphanous","exculpate","hegemony"],
+        "Adult":["sesquipedalian","supercalifragilisticexpialidocious","tergiversation"],
+        }
+
+    def _current_grade (self ):
+        user =user_management .get_user (self .current_user ["username"])or {}
+        return user .get ("grade")or "Grade 9"
+
+    def handle_spell (self ,argument :str ):
+        word =argument .strip ()
+        if not word :
+            words =self ._spell_words ()
+            word =random .choice (words .get (self ._current_grade (),words ["Grade 9"]))
+        try :
+            user =user_management .update_user_profile (
+            self .current_user ["username"],
+            last_spell_word =word ,
+            spelling_sessions =(user_management .get_user (self .current_user ["username"])or {}).get ("spelling_sessions",0 )+1 ,
+            )
+            self .current_user =user
+        except Exception :
+            pass
+        self .add_message (
+        "system",
+        f"[bold #79c0ff]Spelling practice[/bold #79c0ff]\n"
+        f"Word: [bold]{word}[/bold]\n"
+        "CLI cannot play browser speech, so read the word aloud or use the web Speak Word button for audio pronunciation.",
+        )
+        self ._track ("spell_practice",topic =word )
+
+    def handle_dictate (self ,argument :str ):
+        words =self ._spell_words ()
+        word =argument .strip ()or random .choice (words .get (self ._current_grade (),words ["Grade 9"]))
+        try :
+            user =user_management .update_user_profile (
+            self .current_user ["username"],
+            last_dictation_word =word ,
+            dictation_sessions =(user_management .get_user (self .current_user ["username"])or {}).get ("dictation_sessions",0 )+1 ,
+            )
+            self .current_user =user
+        except Exception :
+            pass
+        self .add_message (
+        "system",
+        f"[bold #79c0ff]Dictation[/bold #79c0ff]\n"
+        f"Dictate this word to the student: [bold]{word}[/bold]\n"
+        "Then have them type it in the CLI input or use the timed web Dictation button.",
+        )
+        self ._track ("dictation_practice",topic =word )
+
+    def handle_theme (self ,argument :str ):
+        tokens =argument .split ()
+        if not tokens :
+            self .add_message ("error","Usage: /theme <dark|light|custom> [ink] [panel] [accent] [text]")
+            return
+        mode =tokens [0 ].lower ()
+        if mode not in ("dark","light","custom"):
+            self .add_message ("error","Theme must be dark, light, or custom.")
+            return
+        theme ={"mode":mode}
+        if mode =="custom":
+            labels =("ink","panel","accent","text")
+            for label ,value in zip (labels ,tokens [1:]):
+                if not re .match (r"^#[0-9a-fA-F]{6}$",value ):
+                    self .add_message ("error",f"{label} must be a hex color like #58a6ff.")
+                    return
+                theme [label]=value
+        try :
+            user =user_management .update_user_profile (self .current_user ["username"],theme =theme )
+            self .current_user =user
+        except Exception as e :
+            self .add_message ("error",f"Could not save theme: {e}")
+            return
+        self .add_message ("system",f"Saved theme preference: [bold]{mode}[/bold]. The web app can use matching custom colors from Settings.")
+
+    def handle_survey (self ,argument :str ):
+        tokens =argument .split ("|")
+        if len (tokens )>=3:
+            grade ,subject ,weak_subject =[part .strip ()for part in tokens [:3]]
+            try :
+                user =user_management .update_user_profile (
+                self .current_user ["username"],
+                grade =grade or "Grade 9",
+                subject =subject or "General",
+                weak_subject =weak_subject or "None",
+                survey_filled =True ,
+                )
+                self .current_user =user
+                self .add_message ("system",f"Survey saved: [bold]{user.get('grade')}[/bold] - [bold]{user.get('subject')}[/bold].")
+            except Exception as e :
+                self .add_message ("error",f"Could not save survey: {e}")
+            return
+        questions =user_management .get_survey_questions ()
+        lines =["[bold #79c0ff]Student survey[/bold #79c0ff]","Use: [bold]/survey Grade 9 | Science | Algebra[/bold]",""]
+        lines .extend (f"- {q.get('label',q.get('key'))}"for q in questions )
+        self .add_message ("system","\n".join (lines ))
+
+    def handle_history (self ,argument :str ):
+        if argument .strip ().lower ()in ("clear","delete"):
+            self .history .clear ()
+            self .add_message ("system","CLI chat history deleted for this session.")
+            return
+        user =user_management .get_user (self .current_user ["username"])or {}
+        profile =gamification .get_profile (streak_count =getattr (self ,"streak_count",0 ))
+        recent =self .history [-8 :]
+        lines =[
+        "[bold #79c0ff]Account History & Analysis[/bold #79c0ff]",
+        f"[bold]User:[/bold] {self.current_user['username']}",
+        f"[bold]Grade:[/bold] {user.get('grade','Grade 9')}",
+        f"[bold]Preferred subject:[/bold] {user.get('subject','General')}",
+        f"[bold]Weak subject:[/bold] {user.get('weak_subject','None')}",
+        f"[bold]Level:[/bold] {profile['level']} - {profile['title']} ({profile['xp']} XP)",
+        f"[bold]Current streak:[/bold] {profile['streak']} day(s)",
+        f"[bold]Spelling sessions:[/bold] {user.get('spelling_sessions',0)}",
+        f"[bold]Dictation sessions:[/bold] {user.get('dictation_sessions',0)}",
+        "",
+        "[bold]Recent chat:[/bold]",
+        ]
+        if recent :
+            for item in recent :
+                lines .append (f"- {item['role']}: {item['content'][:90]}")
+        else :
+            lines .append ("[dim]No chat history in this CLI session yet.[/dim]")
+        self .add_message ("system","\n".join (lines ))
+
+    def handle_image (self ,argument :str ):
+        image_path =Path (argument .strip ().strip ('"'))
+        if not argument .strip ():
+            self .add_message ("error","Usage: /image <path>")
+            return
+        if not image_path .exists ()or not image_path .is_file ():
+            self .add_message ("error",f"Image file not found: {image_path}")
+            return
+        self .run_image_worker (image_path )
+
     def _parse_quiz_args (self ,argument :str ):
         
         tokens =argument .split ()
@@ -752,13 +900,17 @@ class TutorBotApp (App ):
         self .call_from_thread (self .set_busy ,True )
         try :
             user_msg =self .history [-1 ]["content"]
+            force_english =(
+            getattr (self ,"preferred_language","English").lower ()!="english"
+            and getattr (self ,"preferred_language","English").lower ()==getattr (self ,"interface_language","English").lower ()
+            )
+            model_user_msg =user_msg
+            if getattr (self ,"preferred_language","English").lower ()!="english":
+                model_user_msg =google_translate (user_msg ,"English",source_language =self .preferred_language)
+                self .history [-1 ]["content"]=model_user_msg
 
             language_prompt =""
-            if getattr (self ,"preferred_language","English").lower ()!="english":
-                language_prompt =(
-                f"\n\n=== RESPONSE LANGUAGE ===\n"
-                f"Answer the student in {self.preferred_language}. Keep explanations natural and age-appropriate.\n"
-                )
+            language_prompt ="\n\n=== RESPONSE LANGUAGE ===\nAlways answer in English. Do not translate your own output.\n"
             system_prompt =SYSTEM_PROMPT +language_prompt 
 
 
@@ -773,8 +925,8 @@ class TutorBotApp (App ):
                 f"The user has identified {weak_subject} as a weak subject. "
                 f"When answering, prioritize clearer explanations, examples, and practice in that area when it is relevant to the question.\n"
                 )
-            if self ._looks_like_factual_question (user_msg ):
-                search_context ,source =get_context_for_topic (user_msg ,max_chars =2000 )
+            if self ._looks_like_factual_question (model_user_msg ):
+                search_context ,source =get_context_for_topic (model_user_msg ,max_chars =2000 )
 
                 if search_context :
                     system_prompt =(
@@ -797,6 +949,8 @@ class TutorBotApp (App ):
 
 
             result =ask_ai (self .history ,system_prompt ,max_tokens =1024 )
+            if getattr (self ,"preferred_language","English").lower ()!="english"and not force_english:
+                result =google_translate (result ,self .preferred_language,source_language ="English")
             self .history .append ({"role":"assistant","content":result })
             self .call_from_thread (self .add_message ,"assistant",result )
         except Exception as e :
@@ -922,6 +1076,36 @@ class TutorBotApp (App ):
             self .call_from_thread (self ._track ,"search",topic =query )
         except Exception as e :
             self .call_from_thread (self .add_message ,"error",f"Search failed: {e}")
+        finally :
+            self .call_from_thread (self .set_busy ,False )
+
+    @work (thread =True ,exclusive =True )
+    def run_image_worker (self ,image_path ):
+        self .call_from_thread (self .set_busy ,True )
+        try :
+            ocr_text =extract_image_text (image_path )or "No readable text was detected in the image."
+            image_description =describe_image (image_path )
+            prompt =(
+            "I processed an image using OCR and layout analysis. "
+            "Explain only what is supported by the OCR text and layout summary. "
+            "If OCR text contains a question, solve it step by step. "
+            "If OCR is weak, ask for a clearer image.\n\n"
+            f"Image description:\n{image_description}\n\n"
+            f"OCR text:\n{ocr_text}"
+            )
+            self .history .append ({"role":"user","content":prompt })
+            response =ask_ai (
+            self .history ,
+            SYSTEM_PROMPT +"\n\nAlways answer in English. Do not translate your own output.",
+            max_tokens =1024 ,
+            )
+            if getattr (self ,"preferred_language","English").lower ()!="english":
+                response =google_translate (response ,self .preferred_language,source_language ="English")
+            self .history .append ({"role":"assistant","content":response })
+            self .call_from_thread (self .add_message ,"assistant",response )
+            self .call_from_thread (self ._track ,"image_analysis",topic =str (image_path .name ))
+        except Exception as e :
+            self .call_from_thread (self .add_message ,"error",f"Image analysis failed: {e}")
         finally :
             self .call_from_thread (self .set_busy ,False )
 

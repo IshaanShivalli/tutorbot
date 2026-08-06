@@ -10,9 +10,15 @@
 <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-<div class="page">
-
-  <aside id="authOverlay" class="auth-overlay">
+  <aside class="history-sidebar" id="historySidebar">
+    <div class="history-sidebar-head">
+      <h2>Chats</h2>
+      <button id="newChatButton" class="ibtn" type="button" aria-label="New chat" title="New chat">+</button>
+    </div>
+    <div id="chatHistoryList" class="chat-history-list"></div>
+  </aside>
+  <div class="page">
+    <aside id="authOverlay" class="auth-overlay">
     <div class="auth-card">
       <div class="auth-brand">
         <span class="auth-logo">TB</span>
@@ -44,13 +50,16 @@
     <div class="brand">
       <span class="brand-mark">TB</span>
       <div class="brand-text">
-        <h1>TutorBot</h1>
+        <h1>TutorBot <span id="streakDisplay" style="font-size: 14px; font-weight: 700; color: #ffb347; margin-left: 8px; display: none;">🔥 <span id="streakVal">0</span></span></h1>
         <p id="status" class="status">connecting…</p>
       </div>
     </div>
     <div class="topbar-actions">
       <button id="spellButton" class="ibtn" aria-label="Spell Practice" title="Spell Practice">
         <svg viewBox="0 0 24 24"><path d="M12 6.0001C12 6.0001 8 2.00006 4 2.00006V18C8 18 12 22 12 22C12 22 16 18 20 18V2.00006C16 2.00006 12 6.0001 12 6.0001Z"/><path d="M12 6V22"/></svg>
+      </button>
+      <button id="dictateButton" class="ibtn" aria-label="Dictation Practice" title="Dictation Practice">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2M8 12a4 4 0 0 1 8 0"/></svg>
       </button>
       <button id="voiceButton" class="ibtn" aria-label="Voice input" title="Voice input">
         <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z"/><path d="M19 11a7 7 0 0 1-14 0M12 18v3"/></svg>
@@ -66,6 +75,9 @@
       </button>
       <button id="themeToggleButton" class="ibtn" aria-label="Toggle theme" title="Toggle theme">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+      </button>
+      <button id="historyButton" class="ibtn" aria-label="History & Analysis" title="History & Analysis">
+        <svg viewBox="0 0 24 24"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
       </button>
       <button id="settingsButton" class="ibtn" aria-label="Settings" title="Settings">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.07-.4.1-.8.1-1.2Z"/></svg>
@@ -260,10 +272,34 @@
         <select id="themeSelect">
           <option value="dark">Dark Mode</option>
           <option value="light">Light Mode</option>
+          <option value="custom">Custom Theme</option>
         </select>
       </label>
+      
+      <div id="customThemeControls" style="margin-top: 10px; display: none;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px;">
+          <label class="field-label" style="margin-bottom:0;">Ink (BG)
+            <input type="color" id="colorInk" value="#0a0812" style="width:100%; height:34px; padding:0; border:0; background:transparent;">
+          </label>
+          <label class="field-label" style="margin-bottom:0;">Panel BG
+            <input type="color" id="colorPanel" value="#1c1830" style="width:100%; height:34px; padding:0; border:0; background:transparent;">
+          </label>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <label class="field-label" style="margin-bottom:0;">Accent
+            <input type="color" id="colorChalk" value="#a855f7" style="width:100%; height:34px; padding:0; border:0; background:transparent;">
+          </label>
+          <label class="field-label" style="margin-bottom:0;">Text
+            <input type="color" id="colorText" value="#f5f2fa" style="width:100%; height:34px; padding:0; border:0; background:transparent;">
+          </label>
+        </div>
+      </div>
 
-      <button id="saveSettings" class="btn-solid full" type="button">Save settings</button>
+      <label class="field-label">Login survey questions
+        <textarea id="surveyQuestionsInput" rows="4" placeholder="Grade level&#10;Preferred subject&#10;Weakest subject"></textarea>
+      </label>
+
+      <button id="saveSettings" class="btn-solid full" type="button" style="margin-top: 16px;">Save settings</button>
       <p class="modal-note">TutorBot answers, quizzes, voice recognition, and image explanations use the response language. ESP32 Wi-Fi values are stored on the PC server for setup reference.</p>
     </div>
   </aside>
@@ -299,6 +335,110 @@
           <button id="spellCheckBtn" class="btn-solid full" type="button">Check</button>
           <button id="spellNextBtn" class="btn-ghost full hidden" type="button">Next Word</button>
         </div>
+      </div>
+    </div>
+  </aside>
+
+  <aside id="dictationModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2>Dictation Mode</h2>
+        <button id="closeDictationModal" class="ibtn" aria-label="Close">×</button>
+      </div>
+      <p class="modal-copy">Type the word as you hear it. You have limited time!</p>
+      
+      <div class="spell-box">
+        <div class="spell-stats" style="display: flex; justify-content: space-between; margin-bottom: 16px; font-weight: 600;">
+          <span>Time: <span id="dictationTimer" style="color: #ef4444;">10s</span></span>
+          <span>Streak: <span id="dictationStreak">0</span></span>
+        </div>
+        
+        <div class="spell-controls" style="text-align: center; margin-bottom: 20px;">
+          <button id="dictationHearBtn" class="btn-solid" type="button" style="display: inline-flex; align-items: center; gap: 8px;">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5z"></path><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+            Dictate Word
+          </button>
+        </div>
+
+        <label class="field-label">Your Type-in
+          <input id="dictationInput" type="text" autocomplete="off" placeholder="Listen and type quickly!" style="text-align: center; font-size: 16px;">
+        </label>
+        
+        <div id="dictationFeedback" class="spell-feedback" style="margin: 12px 0; text-align: center; font-weight: 600; min-height: 24px;"></div>
+        
+        <div class="spell-actions" style="display: flex; gap: 12px; margin-top: 16px;">
+          <button id="dictationStartBtn" class="btn-solid full" type="button">Start Session</button>
+          <button id="dictationNextBtn" class="btn-ghost full hidden" type="button">Next Word</button>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <aside id="surveyModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2>Welcome to TutorBot!</h2>
+      </div>
+      <p class="modal-copy">Please customize your initial learning settings so TutorBot can assist you properly.</p>
+      
+      <label class="field-label">What is your Grade Level?
+        <select id="surveyGrade">
+          <option>Grade 6</option><option>Grade 7</option><option>Grade 8</option>
+          <option selected>Grade 9</option><option>Grade 10</option><option>Grade 11</option>
+          <option>Grade 12</option><option>College</option><option>Adult</option>
+        </select>
+      </label>
+      
+      <label class="field-label">What is your Preferred Subject?
+        <select id="surveySubject">
+          <option selected>General</option><option>Mathematics</option><option>Science</option>
+          <option>English</option><option>History</option><option>Computer Science</option>
+        </select>
+      </label>
+      
+      <label class="field-label">What is your Weakest Subject?
+        <input id="surveyWeakSubject" type="text" placeholder="e.g. Algebra, Physics, Chemistry">
+      </label>
+
+      <button id="submitSurvey" class="btn-solid full" type="button" style="margin-top: 16px;">Get Started</button>
+    </div>
+  </aside>
+
+  <aside id="historyModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card" style="max-width: 600px;">
+      <div class="modal-head">
+        <h2>Account History & Analysis</h2>
+        <button id="closeHistoryModal" class="ibtn" aria-label="Close">×</button>
+      </div>
+      <p class="modal-copy">Analyze your learning history and stats below.</p>
+      
+      <div style="display: flex; gap: 10px; margin-bottom: 16px; border-bottom: 1px solid var(--line); padding-bottom: 8px;">
+        <button id="tabStatsBtn" class="pill active" style="border:0; background:transparent;">Stats & Analytics</button>
+        <button id="tabHistoryBtn" class="pill" style="border:0; background:transparent;">Chat Logs</button>
+      </div>
+
+      <div id="historyStatsTab" class="history-tab">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+          <div class="spell-stats">
+            <p style="font-size:12px; color:var(--muted); text-transform:uppercase; font-weight:600;">Spelling Practice Score</p>
+            <h3 id="analysisSpellScore" style="font-size:24px; margin:4px 0 0;">0</h3>
+          </div>
+          <div class="spell-stats">
+            <p style="font-size:12px; color:var(--muted); text-transform:uppercase; font-weight:600;">Longest Streak</p>
+            <h3 id="analysisStreak" style="font-size:24px; margin:4px 0 0;">0</h3>
+          </div>
+        </div>
+        
+        <div class="spell-stats" style="margin-bottom: 16px;">
+          <p style="font-size:12px; color:var(--muted); text-transform:uppercase; font-weight:600; margin-bottom: 8px;">Learning Focus Recommendation</p>
+          <p id="analysisRecommendation" style="font-size:14px; font-weight:500;">Fill out your subject focus to get customized advice!</p>
+        </div>
+      </div>
+
+      <div id="historyLogsTab" class="history-tab hidden" style="max-height: 250px; overflow-y: auto; padding-right: 8px;">
+        <ul id="historyLogsList" style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px;">
+          <!-- Chat logs dynamically updated -->
+        </ul>
       </div>
     </div>
   </aside>

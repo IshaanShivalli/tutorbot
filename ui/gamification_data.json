@@ -1,5 +1,5 @@
 {
-  "xp": 120,
+  "xp": 130,
   "quizzes_generated": 2,
   "docs_exported": 0,
   "messages_sent": 2,
@@ -9,6 +9,7 @@
     "proton"
   ],
   "badges": [
-    "first_quiz"
+    "first_quiz",
+    "streak_3"
   ]
 }
