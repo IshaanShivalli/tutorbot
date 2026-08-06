@@ -66,7 +66,20 @@ const filesList = document.getElementById("filesList");
 let ttsEnabled = false;
 let mediaStream = null;
 let profile = loadJSON("tb_profile", { grade: "Grade 9", subject: "General" });
-let settings = loadJSON("tb_settings", { language: "English", learningLanguage: "English", ssid: "", password: "" });
+let settings = loadJSON("tb_settings", { language: "English", learningLanguage: "English", ssid: "", password: "", theme: "dark" });
+
+function applyTheme(theme) {
+  if (theme === "light") {
+    document.body.classList.add("light-theme");
+  } else {
+    document.body.classList.remove("light-theme");
+  }
+  const themeSelect = document.getElementById("themeSelect");
+  if (themeSelect) {
+    themeSelect.value = theme;
+  }
+}
+applyTheme(settings.theme || "dark");
 
 let isRegistered = false; // Toggles between login and registration mode
 
@@ -192,6 +205,31 @@ function saveJSON(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
 }
 
+function speechCode(language) {
+  const codes = {
+    English: "en-US",
+    Hindi: "hi-IN",
+    Kannada: "kn-IN",
+    Tamil: "ta-IN",
+    Telugu: "te-IN",
+    Malayalam: "ml-IN",
+    Marathi: "mr-IN",
+    Bengali: "bn-IN",
+    Gujarati: "gu-IN",
+    Spanish: "es-ES",
+    French: "fr-FR",
+    German: "de-DE",
+    Portuguese: "pt-PT",
+    Italian: "it-IT",
+    Arabic: "ar-SA",
+    Chinese: "zh-CN",
+    Japanese: "ja-JP",
+    Korean: "ko-KR",
+    Russian: "ru-RU",
+  };
+  return codes[language] || "en-US";
+}
+
 function escapeHTML(str) {
   return str.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
@@ -225,6 +263,13 @@ function addMessage(role, text, files) {
       chip.innerHTML = `<span>📄</span><a href="${f.download_url}" target="_blank" rel="noopener">${escapeHTML(f.name)}</a>`;
       bubble.appendChild(chip);
     });
+  }
+
+  if (role === "assistant") {
+    const avatar = document.createElement("div");
+    avatar.className = "avatar tutorbot-avatar";
+    avatar.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"></rect><circle cx="12" cy="5" r="2"></circle><path d="M12 7v4M8 15h.01M16 15h.01"></path></svg>`;
+    row.appendChild(avatar);
   }
 
   row.appendChild(bubble);
@@ -281,6 +326,10 @@ async function sendPrompt(text) {
     if (data.error) {
       addMessage("error", data.error);
     } else {
+      if (data.settings && data.settings.learningLanguage) {
+        settings.learningLanguage = data.settings.learningLanguage;
+        saveJSON("tb_settings", settings);
+      }
       addMessage(data.type || "assistant", data.response, data.files);
     }
   } catch (err) {
@@ -471,18 +520,28 @@ voiceButton.addEventListener("click", () => {
     addMessage("error", "Voice input is not supported in this browser.");
     return;
   }
+  if (!window.isSecureContext && location.hostname !== "localhost" && location.hostname !== "127.0.0.1") {
+    addMessage("error", "Voice input needs HTTPS on phones. Use localhost on the PC, or host TutorBot with HTTPS for mobile voice.");
+    return;
+  }
   if (recognizer) {
     recognizer.stop();
     return;
   }
   recognizer = new SR();
-  recognizer.lang = "en-US";
+  recognizer.lang = speechCode(settings.learningLanguage);
   recognizer.interimResults = false;
   voiceButton.classList.add("listening");
+  addMessage("system", `Listening in ${settings.learningLanguage}...`);
   recognizer.onresult = (e) => {
     const text = e.results[0][0].transcript;
     promptInput.value = text;
     autoGrow();
+    promptInput.focus();
+  };
+  recognizer.onerror = (e) => {
+    const reason = e.error || "unknown";
+    addMessage("error", `Voice input failed: ${reason}. Check microphone permission and browser support.`);
   };
   recognizer.onend = () => {
     voiceButton.classList.remove("listening");
@@ -502,11 +561,15 @@ settingsButton.addEventListener("click", () => {
   passwordInput.value = "";
   languageSelect.value = settings.language;
   learningLanguageSelect.value = settings.learningLanguage;
+  const themeSelect = document.getElementById("themeSelect");
+  if (themeSelect) themeSelect.value = settings.theme || "dark";
+  settingsPanel.classList.remove("hidden");
   settingsPanel.classList.add("open");
   settingsPanel.setAttribute("aria-hidden", "false");
 });
 closeSettings.addEventListener("click", () => {
   settingsPanel.classList.remove("open");
+  settingsPanel.classList.add("hidden");
   settingsPanel.setAttribute("aria-hidden", "true");
 });
 saveSettings.addEventListener("click", async () => {
@@ -514,6 +577,11 @@ saveSettings.addEventListener("click", async () => {
   settings.learningLanguage = learningLanguageSelect.value;
   settings.ssid = ssidInput.value.trim();
   settings.password = passwordInput.value;
+  const themeSelect = document.getElementById("themeSelect");
+  if (themeSelect) {
+    settings.theme = themeSelect.value;
+    applyTheme(settings.theme);
+  }
   saveJSON("tb_settings", settings);
 
   if (settings.ssid) {
@@ -526,7 +594,9 @@ saveSettings.addEventListener("click", async () => {
     } catch {}
   }
   settingsPanel.classList.remove("open");
+  settingsPanel.classList.add("hidden");
   settingsPanel.setAttribute("aria-hidden", "true");
+  addMessage("system", `Settings saved. TutorBot will respond in ${settings.learningLanguage}.`);
 });
 
 changeFocusButton.addEventListener("click", () => {
@@ -548,7 +618,133 @@ saveFocusButton.addEventListener("click", () => {
   focusModal.setAttribute("aria-hidden", "true");
 });
 
+// Theme quick toggle button
+const themeToggleButton = document.getElementById("themeToggleButton");
+if (themeToggleButton) {
+  themeToggleButton.addEventListener("click", () => {
+    const currentTheme = settings.theme || "dark";
+    const nextTheme = currentTheme === "dark" ? "light" : "dark";
+    settings.theme = nextTheme;
+    applyTheme(nextTheme);
+    saveJSON("tb_settings", settings);
+  });
+}
+
+// Persistent command buttons
+function initCommandButtons() {
+  const buttons = document.querySelectorAll(".cmd-btn");
+  buttons.forEach(btn => {
+    btn.addEventListener("click", () => {
+      const cmd = btn.getAttribute("data-cmd");
+      if (cmd === "/quiz" || cmd === "/search" || cmd === "/doc") {
+        promptInput.value = cmd + " ";
+        promptInput.focus();
+        autoGrow();
+      } else {
+        sendPrompt(cmd);
+      }
+    });
+  });
+}
+
+// Spell Practice modal handlers
+const spellButton = document.getElementById("spellButton");
+const spellModal = document.getElementById("spellModal");
+const closeSpellModal = document.getElementById("closeSpellModal");
+const spellHearBtn = document.getElementById("spellHearBtn");
+const spellInput = document.getElementById("spellInput");
+const spellFeedback = document.getElementById("spellFeedback");
+const spellCheckBtn = document.getElementById("spellCheckBtn");
+const spellNextBtn = document.getElementById("spellNextBtn");
+const spellScoreEl = document.getElementById("spellScore");
+const spellStreakEl = document.getElementById("spellStreak");
+
+let currentSpellWord = "";
+let spellScore = 0;
+let spellStreak = 0;
+
+const spellWordLists = {
+  "Grade 6": ["abandon", "behavior", "chronology", "dialogue", "endeavor", "fantastic", "geometry", "horizon", "influence", "journey"],
+  "Grade 7": ["accommodation", "beneficial", "characteristic", "differentiate", "enthusiasm", "fluctuation", "gullible", "hypocrisy", "impartial", "judicious"],
+  "Grade 8": ["achievement", "belligerent", "conspicuous", "deteriorate", "exaggerate", "formidable", "garrulous", "hypothesis", "inadvertent", "juxtaposition"],
+  "Grade 9": ["aesthetic", "benevolent", "cacophony", "deference", "ephemeral", "fortuitous", "gregarious", "hyperbole", "impetuous", "loquacious"],
+  "Grade 10": ["acquiesce", "capricious", "dichotomy", "equivocal", "fastidious", "harangue", "idiosyncrasy", "laconic", "obfuscate", "pragmatic"],
+  "Grade 11": ["anachronism", "camaraderie", "deleterious", "ephemeral", "facetious", "grandiloquent", "impetuous", "mendacious", "nefarious", "parsimonious"],
+  "Grade 12": ["cacophony", "chicanery", "desultory", "egregious", "fecund", "garrulous", "insidious", "mellifluous", "obsequious", "querulous"],
+  "College": ["anathema", "bilious", "crepuscular", "diaphanous", "exculpate", "hegemony", "inimical", "hubris", "paradigmatic", "surreptitious"],
+  "Adult": ["absquatulate", "bourgeoisie", "floccinaucinihilipilification", "honorificabilitudinitatibus", "sesquipedalian", "supercalifragilisticexpialidocious", "tergiversation"]
+};
+
+function speakWord(word) {
+  if (!word || !("speechSynthesis" in window)) return;
+  window.speechSynthesis.cancel();
+  const utter = new SpeechSynthesisUtterance(word);
+  utter.lang = "en-US";
+  window.speechSynthesis.speak(utter);
+}
+
+function getNextSpellWord() {
+  const grade = profile.grade || "Grade 9";
+  const list = spellWordLists[grade] || spellWordLists["Grade 9"];
+  const randomWord = list[Math.floor(Math.random() * list.length)];
+  currentSpellWord = randomWord;
+  spellInput.value = "";
+  spellFeedback.className = "spell-feedback";
+  spellFeedback.textContent = "";
+  spellNextBtn.classList.add("hidden");
+  spellCheckBtn.classList.remove("hidden");
+  speakWord(currentSpellWord);
+}
+
+if (spellButton && spellModal) {
+  spellButton.addEventListener("click", () => {
+    spellModal.classList.remove("hidden");
+    spellModal.setAttribute("aria-hidden", "false");
+    getNextSpellWord();
+  });
+
+  closeSpellModal.addEventListener("click", () => {
+    spellModal.classList.add("hidden");
+    spellModal.setAttribute("aria-hidden", "true");
+    window.speechSynthesis?.cancel();
+  });
+
+  spellHearBtn.addEventListener("click", () => {
+    speakWord(currentSpellWord);
+  });
+
+  spellCheckBtn.addEventListener("click", () => {
+    const userAns = spellInput.value.trim().toLowerCase();
+    if (!userAns) return;
+    if (userAns === currentSpellWord.toLowerCase()) {
+      spellScore += 10;
+      spellStreak += 1;
+      spellFeedback.textContent = "✓ Correct! Well done!";
+      spellFeedback.className = "spell-feedback correct";
+      spellCheckBtn.classList.add("hidden");
+      spellNextBtn.classList.remove("hidden");
+    } else {
+      spellStreak = 0;
+      spellFeedback.textContent = `✗ Incorrect. The correct spelling is "${currentSpellWord}".`;
+      spellFeedback.className = "spell-feedback incorrect";
+      spellCheckBtn.classList.add("hidden");
+      spellNextBtn.classList.remove("hidden");
+    }
+    spellScoreEl.textContent = spellScore;
+    spellStreakEl.textContent = spellStreak;
+  });
+
+  spellNextBtn.addEventListener("click", () => {
+    getNextSpellWord();
+    spellInput.focus();
+  });
+}
+
+function loadSuggestions() {
+  // suggestions block is replaced by persistent command buttons.
+}
+
 updateProfileText();
 checkHealth();
-loadSuggestions();
+initCommandButtons();
 setInterval(checkHealth, 30000);

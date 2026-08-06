@@ -49,6 +49,9 @@
       </div>
     </div>
     <div class="topbar-actions">
+      <button id="spellButton" class="ibtn" aria-label="Spell Practice" title="Spell Practice">
+        <svg viewBox="0 0 24 24"><path d="M12 6.0001C12 6.0001 8 2.00006 4 2.00006V18C8 18 12 22 12 22C12 22 16 18 20 18V2.00006C16 2.00006 12 6.0001 12 6.0001Z"/><path d="M12 6V22"/></svg>
+      </button>
       <button id="voiceButton" class="ibtn" aria-label="Voice input" title="Voice input">
         <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z"/><path d="M19 11a7 7 0 0 1-14 0M12 18v3"/></svg>
       </button>
@@ -60,6 +63,9 @@
       </button>
       <button id="teacherButton" class="ibtn" aria-label="Teacher Studio" title="Teacher Studio">
         <svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+      </button>
+      <button id="themeToggleButton" class="ibtn" aria-label="Toggle theme" title="Toggle theme">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
       </button>
       <button id="settingsButton" class="ibtn" aria-label="Settings" title="Settings">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.07-.4.1-.8.1-1.2Z"/></svg>
@@ -85,8 +91,6 @@
     </div>
   </main>
 
-  <div id="suggestions" class="suggestions hidden"></div>
-
   <footer class="composer">
     <div id="cameraPanel" class="camera-panel hidden">
       <video id="cameraPreview" class="camera-preview" autoplay playsinline muted></video>
@@ -94,6 +98,17 @@
         <button id="captureButton" class="btn-solid" type="button">Capture</button>
         <button id="cancelCameraButton" class="btn-ghost" type="button">Cancel</button>
       </div>
+    </div>
+
+    <div id="cmdBtnRow" class="cmd-btn-row">
+      <button type="button" class="cmd-btn" data-cmd="/quiz">📝 Quiz</button>
+      <button type="button" class="cmd-btn" data-cmd="/search">🔍 Search</button>
+      <button type="button" class="cmd-btn" data-cmd="/doc">📄 Doc</button>
+      <button type="button" class="cmd-btn" data-cmd="/model">🤖 Model</button>
+      <button type="button" class="cmd-btn" data-cmd="/clear">🗑️ Clear</button>
+      <button type="button" class="cmd-btn" data-cmd="/stats">📊 Stats</button>
+      <button type="button" class="cmd-btn" data-cmd="/report">📈 Report</button>
+      <button type="button" class="cmd-btn" data-cmd="/help">❓ Help</button>
     </div>
 
     <form id="chatForm" class="chat-form">
@@ -195,27 +210,96 @@
       <label class="field-label">ESP32 Wi-Fi password
         <input id="passwordInput" type="password" autocomplete="new-password" placeholder="Your Wi-Fi password">
       </label>
-      <label class="field-label">Interface language
+      <label class="field-label">App interface language
         <select id="languageSelect">
-          <option value="English">English</option><option value="Spanish">Español</option>
-          <option value="French">Français</option><option value="German">Deutsch</option>
-          <option value="Chinese">中文</option><option value="Portuguese">Português</option>
-          <option value="Japanese">日本語</option><option value="Russian">Русский</option>
-          <option value="Arabic">العربية</option><option value="Hindi">हिन्दी</option>
+          <option value="English">English</option>
+          <option value="Hindi">Hindi</option>
+          <option value="Kannada">Kannada</option>
+          <option value="Tamil">Tamil</option>
+          <option value="Telugu">Telugu</option>
+          <option value="Malayalam">Malayalam</option>
+          <option value="Marathi">Marathi</option>
+          <option value="Bengali">Bengali</option>
+          <option value="Gujarati">Gujarati</option>
+          <option value="Spanish">Spanish</option>
+          <option value="French">French</option>
+          <option value="German">German</option>
+          <option value="Portuguese">Portuguese</option>
+          <option value="Italian">Italian</option>
+          <option value="Arabic">Arabic</option>
+          <option value="Chinese">Chinese</option>
+          <option value="Japanese">Japanese</option>
+          <option value="Korean">Korean</option>
+          <option value="Russian">Russian</option>
         </select>
       </label>
-      <label class="field-label">Preferred learning language
+      <label class="field-label">TutorBot response language
         <select id="learningLanguageSelect">
-          <option value="English">English</option><option value="Spanish">Español</option>
-          <option value="French">Français</option><option value="German">Deutsch</option>
-          <option value="Chinese">中文</option><option value="Portuguese">Português</option>
-          <option value="Japanese">日本語</option><option value="Russian">Русский</option>
-          <option value="Arabic">العربية</option><option value="Hindi">हिन्दी</option>
+          <option value="English">English</option>
+          <option value="Hindi">Hindi</option>
+          <option value="Kannada">Kannada</option>
+          <option value="Tamil">Tamil</option>
+          <option value="Telugu">Telugu</option>
+          <option value="Malayalam">Malayalam</option>
+          <option value="Marathi">Marathi</option>
+          <option value="Bengali">Bengali</option>
+          <option value="Gujarati">Gujarati</option>
+          <option value="Spanish">Spanish</option>
+          <option value="French">French</option>
+          <option value="German">German</option>
+          <option value="Portuguese">Portuguese</option>
+          <option value="Italian">Italian</option>
+          <option value="Arabic">Arabic</option>
+          <option value="Chinese">Chinese</option>
+          <option value="Japanese">Japanese</option>
+          <option value="Korean">Korean</option>
+          <option value="Russian">Russian</option>
+        </select>
+      </label>
+      <label class="field-label">Interface Theme
+        <select id="themeSelect">
+          <option value="dark">Dark Mode</option>
+          <option value="light">Light Mode</option>
         </select>
       </label>
 
       <button id="saveSettings" class="btn-solid full" type="button">Save settings</button>
-      <p class="modal-note">Stored on the TutorBot PC server for setup reference. To change the ESP32 network, reflash tutorbot-main.ino with the same SSID and password.</p>
+      <p class="modal-note">TutorBot answers, quizzes, voice recognition, and image explanations use the response language. ESP32 Wi-Fi values are stored on the PC server for setup reference.</p>
+    </div>
+  </aside>
+
+  <aside id="spellModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2>Spelling Practice</h2>
+        <button id="closeSpellModal" class="ibtn" aria-label="Close">×</button>
+      </div>
+      <p class="modal-copy">Listen to the word and type the spelling correctly. Try to get a high streak!</p>
+      
+      <div class="spell-box">
+        <div class="spell-stats" style="display: flex; justify-content: space-between; margin-bottom: 16px; font-weight: 600;">
+          <span>Score: <span id="spellScore">0</span></span>
+          <span>Streak: <span id="spellStreak">0</span></span>
+        </div>
+        
+        <div class="spell-controls" style="text-align: center; margin-bottom: 20px;">
+          <button id="spellHearBtn" class="btn-solid" type="button" style="display: inline-flex; align-items: center; gap: 8px;">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5z"></path><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+            Speak Word
+          </button>
+        </div>
+
+        <label class="field-label">Your Spelling
+          <input id="spellInput" type="text" autocomplete="off" placeholder="Type the word you heard..." style="text-align: center; font-size: 16px;">
+        </label>
+        
+        <div id="spellFeedback" class="spell-feedback" style="margin: 12px 0; text-align: center; font-weight: 600; min-height: 24px;"></div>
+        
+        <div class="spell-actions" style="display: flex; gap: 12px; margin-top: 16px;">
+          <button id="spellCheckBtn" class="btn-solid full" type="button">Check</button>
+          <button id="spellNextBtn" class="btn-ghost full hidden" type="button">Next Word</button>
+        </div>
+      </div>
     </div>
   </aside>
 

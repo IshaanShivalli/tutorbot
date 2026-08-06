@@ -189,6 +189,7 @@ class TutorBotApp (App ):
         self .busy =False 
         self .message_count =0 
         self .quiz_count =0 
+        self .preferred_language ="English"
         self .current_user =user_management .get_current_user ()
 
 
@@ -395,6 +396,16 @@ class TutorBotApp (App ):
     def handle_model_info (self ,argument :str ):
         lines =[f"[bold]{k}:[/bold] {v}"for k ,v in MODEL_INFO .items ()]
         self .add_message ("system","\n".join (lines ))
+
+    def handle_language (self ,argument :str ):
+        if not argument .strip ():
+            self .add_message ("error","Usage: /language <language>")
+            return 
+        self .preferred_language =argument .strip ()
+        self .add_message (
+        "system",
+        f"Preferred response language set to [bold]{self.preferred_language}[/bold] for this terminal session.",
+        )
 
     def handle_clear (self ,argument :str ):
         self .action_clear_chat ()
@@ -742,7 +753,13 @@ class TutorBotApp (App ):
         try :
             user_msg =self .history [-1 ]["content"]
 
-            system_prompt =SYSTEM_PROMPT 
+            language_prompt =""
+            if getattr (self ,"preferred_language","English").lower ()!="english":
+                language_prompt =(
+                f"\n\n=== RESPONSE LANGUAGE ===\n"
+                f"Answer the student in {self.preferred_language}. Keep explanations natural and age-appropriate.\n"
+                )
+            system_prompt =SYSTEM_PROMPT +language_prompt 
 
 
 
@@ -768,11 +785,12 @@ class TutorBotApp (App ):
                     f"Source: {source}\n"
                     f"Context: {search_context}\n"
                     f"{subject_prompt}"
+                    f"{language_prompt}"
                     )
                 else :
-                    system_prompt = SYSTEM_PROMPT + subject_prompt
+                    system_prompt = SYSTEM_PROMPT + subject_prompt +language_prompt
             else :
-                system_prompt = SYSTEM_PROMPT + subject_prompt
+                system_prompt = SYSTEM_PROMPT + subject_prompt +language_prompt
 
 
 
@@ -803,6 +821,7 @@ class TutorBotApp (App ):
             number_of_questions =count ,
             use_web_context =use_web ,
             extra_instructions =extra_focus ,
+            quiz_language =getattr (self ,"preferred_language","English"),
             )
             self .last_quiz_content =quiz_content 
             self .last_quiz_doc_content =None 

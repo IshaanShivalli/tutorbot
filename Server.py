@@ -71,6 +71,28 @@ MODEL_INFO = {
     "Backend": "llama.cpp",
 }
 
+SUPPORTED_LANGUAGES = {
+    "english": "English",
+    "hindi": "Hindi",
+    "kannada": "Kannada",
+    "tamil": "Tamil",
+    "telugu": "Telugu",
+    "malayalam": "Malayalam",
+    "marathi": "Marathi",
+    "bengali": "Bengali",
+    "gujarati": "Gujarati",
+    "spanish": "Spanish",
+    "french": "French",
+    "german": "German",
+    "portuguese": "Portuguese",
+    "italian": "Italian",
+    "arabic": "Arabic",
+    "chinese": "Chinese",
+    "japanese": "Japanese",
+    "korean": "Korean",
+    "russian": "Russian",
+}
+
 
 def tutorbot_reply(prompt: str, language: str = "English", profile: dict = None) -> str:
     chat_history.append({"role": "user", "content": prompt})
@@ -135,12 +157,14 @@ def extract_image_text(image_path: Path) -> str:
         return ""
 
 
-def command_response(command_text: str):
+def command_response(command_text: str, language: str = "English", profile: dict = None):
     global last_quiz_content, last_quiz_doc_content, last_quiz_topic, last_quiz_grade
 
     command_name, _, argument = command_text.strip().partition(" ")
     command_name = command_name.lower()
     argument = argument.strip()
+    language = language or "English"
+    profile = profile or {}
 
     if command_name == "/help":
         return {
@@ -160,6 +184,28 @@ def command_response(command_text: str):
             "response": "\n".join(f"{key}: {value}" for key, value in MODEL_INFO.items()),
         }
 
+    if command_name == "/language":
+        if not argument:
+            language_list = ", ".join(SUPPORTED_LANGUAGES.values())
+            return {
+                "type": "system",
+                "response": f"Usage: /language <language>\nSupported: {language_list}",
+            }
+
+        normalized = SUPPORTED_LANGUAGES.get(argument.lower())
+        if not normalized:
+            language_list = ", ".join(SUPPORTED_LANGUAGES.values())
+            return {
+                "type": "error",
+                "response": f"Unsupported language '{argument}'. Supported: {language_list}",
+            }
+
+        return {
+            "type": "system",
+            "response": f"Preferred learning language set to {normalized}.",
+            "settings": {"learningLanguage": normalized},
+        }
+
     if command_name == "/search":
         if not argument:
             return {"type": "error", "response": "Usage: /search <query>"}
@@ -167,7 +213,16 @@ def command_response(command_text: str):
         if not context:
             return {"type": "system", "response": f"No reference material found for '{argument}'."}
         preview = context[:1200] + ("..." if len(context) > 1200 else "")
-        return {"type": "system", "response": f"Source: {source}\n\n{preview}"}
+        response_text = f"Source: {source}\n\n{preview}"
+        if language.lower() != "english":
+            response_text = tutorbot_reply(
+                "Summarize this reference material for the student in "
+                f"{language}. Keep the source title and explain the key ideas clearly.\n\n"
+                f"Source: {source}\n\n{context[:2500]}",
+                language=language,
+                profile=profile,
+            )
+        return {"type": "system", "response": response_text}
 
     if command_name == "/quiz":
         if not argument:
@@ -181,6 +236,7 @@ def command_response(command_text: str):
             grade=grade,
             number_of_questions=count,
             use_web_context=use_web,
+            quiz_language=language,
         )
         last_quiz_content = quiz
         last_quiz_topic = topic
@@ -329,7 +385,7 @@ def ai_chat():
 
     try:
         if prompt.startswith("/"):
-            return jsonify(command_response(prompt))
+            return jsonify(command_response(prompt, language=language or "English", profile=data.get("profile")))
 
         if language and language.lower() != "english":
             return jsonify(

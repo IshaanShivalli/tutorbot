@@ -18,7 +18,7 @@ def normalize_quiz_text (raw_text :str )->str :
     normalized =re .sub (r"\s*B\)\s*",r"\nB) ",normalized )
     normalized =re .sub (r"\s*C\)\s*",r"\nC) ",normalized )
     normalized =re .sub (r"\s*D\)\s*",r"\nD) ",normalized )
-    normalized =re .sub (r"\s*Answer:\s*",r"\nAnswer: ",normalized )
+    normalized =re .sub (r"\s*(ANSWER:)\s*",r"\nANSWER: ",normalized ,flags =re .IGNORECASE )
     normalized =re .sub (r"\s*EXPLANATION:\s*",r"\nEXPLANATION: ",normalized ,flags =re .IGNORECASE )
     normalized =re .sub (r"\n{3,}","\n\n",normalized )
     return normalized .strip ()
@@ -28,6 +28,32 @@ def _count_quiz_questions (raw_text :str )->int :
     return len (re.findall (r"\bQ\d+:", raw_text ,flags =re .IGNORECASE ))
 
 
+def _present_question_numbers (raw_text :str )->set [int ]:
+    present =set ()
+    blocks =re .split (r"\n(?=Q\d+:)",raw_text )
+    for block in blocks :
+        q_match =re .search (r"\bQ(\d+):",block ,flags =re .IGNORECASE )
+        if not q_match :
+            continue 
+        required =("TYPE:","OPTIONS:","ANSWER:","EXPLANATION:")
+        normalized_block =block .upper ()
+        if all (field in normalized_block for field in required ):
+            present .add (int (q_match .group (1 )))
+    return present
+
+
+def _missing_question_numbers (raw_text :str ,expected_count :int )->list [int ]:
+    present =_present_question_numbers (raw_text )
+    return [number for number in range (1 ,expected_count +1 )if number not in present ]
+
+
+def _trim_after_expected_questions (raw_text :str ,expected_count :int )->str :
+    next_question =re .search (rf"\nQ{expected_count +1}:",raw_text ,flags =re .IGNORECASE )
+    if next_question :
+        return raw_text [:next_question .start ()].strip ()
+    return raw_text .strip ()
+
+
 def generate_quiz (
 topic ,
 grade ="Grade 9",
@@ -35,7 +61,8 @@ number_of_questions =5 ,
 quiz_type ="MCQ",
 use_web_context =True ,
 include_images =False ,
-extra_instructions :str =""
+extra_instructions :str ="",
+quiz_language ="English",
 ):
     
     number_of_questions =max (1 ,min (number_of_questions ,20 ))
@@ -69,6 +96,13 @@ For questions where a visual would genuinely improve learning, add a line:
 IMAGE_SUGGESTION: <short description of a useful educational image>
 Only add image suggestions when a visual is highly relevant."""
 
+    language_instruction =""
+    if quiz_language and quiz_language .lower ()!="english":
+        language_instruction =(
+        f"- Write all student-facing quiz text in {quiz_language}. "
+        "Keep field labels exactly in English: TITLE, SUBTITLE, SOURCE, Q<n>, TYPE, OPTIONS, ANSWER, EXPLANATION.\n"
+        )
+
     prompt =f"""
 Create a clean {quiz_type} quiz for a {grade} student on the topic: {topic}.
 
@@ -84,6 +118,9 @@ Requirements:
 - Do not use any rude, offensive, slang, or inappropriate language.
 - Do not stop early. The output must contain all {number_of_questions} questions and answers.
 - The quiz size is capped at 20 questions.
+- Every question must include Q<number>, TYPE, OPTIONS, ANSWER, and EXPLANATION.
+- The final question must be Q{number_of_questions}.
+{language_instruction}
 {image_instruction}{extra_instructions}
 
 Output this exact structure and nothing else. Write Q1 through Q{number_of_questions}.
@@ -122,7 +159,7 @@ Generate the quiz now.
 
 
 
-    max_tokens =min (6000 ,number_of_questions *240 +250 )
+    max_tokens =min (7600 ,number_of_questions *320 +550 )
     quiz =ask_ai (
     [
     {
@@ -138,13 +175,18 @@ Generate the quiz now.
     )
 
     quiz =normalize_quiz_text (quiz )
-    generated_count =_count_quiz_questions (quiz )
+    for _ in range (4 ):
+        missing =_missing_question_numbers (quiz ,number_of_questions )
+        if not missing :
+            break 
 
-    if generated_count < number_of_questions :
-        print (f"[quiz_generator] Only generated {generated_count} of {number_of_questions} questions, continuing...")
+        first_missing =missing [0 ]
+        print (f"[quiz_generator] Missing questions {missing}; continuing from Q{first_missing}...")
         continuation_prompt =(
-        f"The quiz generated so far contains {generated_count} questions. Continue the quiz starting at Q{generated_count +1} and finish through Q{number_of_questions} using the same exact format. "
-        "Do not repeat any earlier questions or answers."
+        f"The quiz generated so far is incomplete. Add only the missing questions starting at Q{first_missing} "
+        f"and continue through Q{number_of_questions}. "
+        "Use the exact same plain-text structure. Do not include TITLE, SUBTITLE, or SOURCE again. "
+        "Do not repeat earlier questions. Each added question must include TYPE, OPTIONS, ANSWER, and EXPLANATION."
         )
         continuation =ask_ai (
         [
@@ -154,7 +196,7 @@ Generate the quiz now.
         }
         ],
         QUIZ_SYSTEM_PROMPT ,
-        max_tokens =min (6000 ,(number_of_questions -generated_count) *240 +250 ),
+        max_tokens =min (7600 ,len (missing )*340 +550 ),
         temperature =0.2 ,
         top_p =0.9 ,
         repeat_penalty =1.05 ,
@@ -162,7 +204,7 @@ Generate the quiz now.
         continuation =normalize_quiz_text (continuation )
         quiz =normalize_quiz_text (quiz +"\n\n"+continuation )
 
-    return quiz
+    return _trim_after_expected_questions (quiz ,number_of_questions )
 
 
 def reformat_quiz_for_doc (

@@ -39,6 +39,12 @@ usage ="/model",
 handler_name ="handle_model_info",
 ),
 Command (
+name ="/language",
+description ="Set the preferred response language in the mobile/web app",
+usage ="/language <language>",
+handler_name ="handle_language",
+),
+Command (
 name ="/login",
 description ="Switch to an existing user account",
 usage ="/login <username> <password>",

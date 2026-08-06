@@ -24,6 +24,28 @@
   --font-family: "Outfit", "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
 }
 
+body.light-theme {
+  color-scheme: light;
+  --ink: #f0edf7;
+  --panel: rgba(255, 255, 255, 0.85);
+  --panel-2: rgba(240, 237, 247, 0.95);
+  --line: rgba(10, 8, 18, 0.1);
+  --text: #1a1726;
+  --muted: #645f75;
+  --chalk: #8b2cf5;
+  --chalk-soft: rgba(139, 44, 245, 0.12);
+  --teal: #0d9488;
+  --rule: #db2777;
+  --user: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  --error: #dc2626;
+}
+
+body.light-theme .brand-text h1 {
+  background: linear-gradient(to right, #1a1726, #4f46e5);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -836,4 +858,80 @@ button:focus-visible, .ibtn:focus-visible, .pill:focus-visible, textarea:focus-v
 }
 .auth-toggle button:hover {
   color: #fff;
+}
+
+/* Command Buttons Row */
+.cmd-btn-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 8px 0 12px;
+  margin-bottom: 4px;
+  scrollbar-width: thin;
+  border-bottom: 1px solid var(--line);
+}
+.cmd-btn-row::-webkit-scrollbar {
+  height: 4px;
+}
+.cmd-btn-row::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 2px;
+}
+.cmd-btn {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 6px 12px;
+  background: var(--panel-2);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+.cmd-btn:hover {
+  border-color: var(--chalk);
+  color: var(--text);
+  background: var(--chalk-soft);
+  transform: translateY(-1px);
+}
+
+/* Assistant Avatar */
+.avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-right: 12px;
+  background: linear-gradient(135deg, #a855f7 0%, #ec4899 100%);
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  box-shadow: 0 4px 10px rgba(168, 85, 247, 0.3);
+}
+.avatar svg {
+  width: 20px;
+  height: 20px;
+  stroke: currentColor;
+}
+
+/* Spelling practice modal details */
+.spell-stats {
+  background: rgba(168, 85, 247, 0.08);
+  border-radius: 12px;
+  padding: 10px 16px;
+  border: 1px solid var(--line);
+}
+.spell-feedback {
+  transition: all 0.2s ease;
+}
+.spell-feedback.correct {
+  color: var(--teal);
+}
+.spell-feedback.incorrect {
+  color: var(--error);
 }
