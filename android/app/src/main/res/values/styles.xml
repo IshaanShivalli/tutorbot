@@ -1,6 +1,0 @@
-<resources>
-    <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
-        <item name="android:windowLightStatusBar">false</item>
-        <item name="android:colorAccent">#2bb3a3</item>
-    </style>
-</resources>

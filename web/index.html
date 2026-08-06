@@ -22,10 +22,13 @@
       
       <form id="authForm">
         <label class="field-label" id="usernameLabel">Username or Email
-          <input type="text" id="authUsername" required placeholder="Enter username">
+          <input type="text" id="authUsername" required placeholder="Enter username/email">
         </label>
-        <label class="field-label">Password
+        <label class="field-label" id="passwordLabel">Password
           <input type="password" id="authPassword" required placeholder="••••••••">
+        </label>
+        <label class="field-label hidden" id="otpLabel">OTP Verification Code
+          <input type="text" id="authOtp" placeholder="••••••" maxlength="6">
         </label>
         <button type="submit" id="authSubmitButton" class="btn-solid full">Log In</button>
       </form>
@@ -54,6 +57,9 @@
       </button>
       <button id="clearButton" class="ibtn" aria-label="Clear chat" title="Clear chat">
         <svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>
+      </button>
+      <button id="teacherButton" class="ibtn" aria-label="Teacher Studio" title="Teacher Studio">
+        <svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
       </button>
       <button id="settingsButton" class="ibtn" aria-label="Settings" title="Settings">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.07-.4.1-.8.1-1.2Z"/></svg>
@@ -112,6 +118,33 @@
     <input id="fileInput" type="file" accept="image/*" capture="environment" style="display:none;">
     <input id="filesInput" type="file" accept="image/*,.pdf,.doc,.docx,.txt" style="display:none;" multiple>
   </footer>
+
+  <aside id="teacherPanel" class="modal hidden" aria-hidden="true">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2>Teacher Studio</h2>
+        <button id="closeTeacher" class="ibtn" aria-label="Close">×</button>
+      </div>
+      <p class="modal-copy">Access advanced options, split answer keys, and manage study profile targets.</p>
+      
+      <div class="teacher-options">
+        <label class="field-label">Target Quiz Questions Count
+          <select id="teacherQuizCount">
+            <option>3</option><option selected>5</option><option>10</option><option>15</option>
+          </select>
+        </label>
+        
+        <label class="field-label">Minimum Passing Rate
+          <select id="teacherPassingRate">
+            <option>60%</option><option selected>70%</option><option>80%</option><option>90%</option>
+          </select>
+        </label>
+
+        <button id="btnCreateSplitQuiz" class="btn-solid full" type="button" style="margin-top: 12px;">Generate Custom Lesson Quiz</button>
+      </div>
+      <p class="modal-note">Teacher configurations will apply to any Socratic quiz generated via `/quiz` in this workspace session.</p>
+    </div>
+  </aside>
 
   <aside id="focusModal" class="modal hidden" aria-hidden="true">
     <div class="modal-card">

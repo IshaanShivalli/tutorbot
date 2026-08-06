@@ -10,14 +10,40 @@ from werkzeug.utils import secure_filename
 from werkzeug.serving import run_simple
 import pytesseract
 
-from vision_model import describe_image
+import smtplib
+from email.mime.text import MIMEText
+import random
+from config import SMTP_SERVER, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_USE_TLS, SYSTEM_PROMPT
 
-from config import SYSTEM_PROMPT
+from vision_model import describe_image
 from model import ask_ai
 from context_fetcher import get_context_for_topic
 from doc_generator import create_quiz_and_answer_key, create_quiz_document
 from quiz_generator import generate_quiz, reformat_quiz_for_doc
 from ui.commands import COMMANDS
+
+verification_codes = {}
+
+def send_otp_email(to_email: str, otp: str):
+    msg = MIMEText(f"Your TutorBot verification code is: {otp}\n\nUse this code to complete registration/login.")
+    msg["Subject"] = "TutorBot Verification OTP"
+    msg["From"] = SMTP_USER
+    msg["To"] = to_email
+
+    try:
+        if SMTP_USE_TLS:
+            server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+            server.starttls()
+        else:
+            server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT)
+        
+        server.login(SMTP_USER, SMTP_PASSWORD)
+        server.sendmail(SMTP_USER, [to_email], msg.as_string())
+        server.quit()
+        return True
+    except Exception as exc:
+        print(f"[SMTP] Error sending email: {exc}")
+        return False
 
 
 ROOT_DIR = Path(__file__).resolve().parent
@@ -157,13 +183,30 @@ def command_response(command_text: str):
             use_web_context=use_web,
         )
         last_quiz_content = quiz
-        last_quiz_doc_content = None
         last_quiz_topic = topic
         last_quiz_grade = grade
+        
+        last_quiz_doc_content = reformat_quiz_for_doc(
+            last_quiz_content,
+            topic=last_quiz_topic,
+            grade=last_quiz_grade,
+        )
+        
+        quiz_path = safe_doc_name(last_quiz_topic, "quiz")
+        create_quiz_document(last_quiz_doc_content, output_path=str(quiz_path), include_answers=False)
+        
+        ans_path = safe_doc_name(last_quiz_topic, "answer_key")
+        create_quiz_document(last_quiz_doc_content, output_path=str(ans_path), include_answers=True)
+        
+        files = [
+            {"name": quiz_path.name, "download_url": f"/downloads/{quiz_path.name}"},
+            {"name": ans_path.name, "download_url": f"/downloads/{ans_path.name}"}
+        ]
+        
         return {
             "type": "assistant",
-            "response": quiz
-            + "\n\nQuiz ready. Use /doc, /doc answers, or /doc split to export Word documents.",
+            "response": f"I've generated the quiz documents for your lesson on **{topic}** ({grade}). Click below to download them directly:",
+            "files": files,
         }
 
     if command_name == "/doc":
@@ -394,6 +437,39 @@ def download_file(filename):
 @app.get("/downloads/<path:filename>")
 def download_generated_file(filename):
     return send_from_directory(DOWNLOAD_DIR, filename, as_attachment=True)
+
+
+@app.post("/api/send-otp")
+def api_send_otp():
+    data = request.get_json(silent=True) or {}
+    email = data.get("email", "").strip()
+    if not email:
+        return jsonify({"error": "Email is required"}), 400
+    
+    otp = f"{random.randint(100000, 999999)}"
+    verification_codes[email] = otp
+    
+    if send_otp_email(email, otp):
+        return jsonify({"ok": True, "message": "OTP code sent to your email"})
+    else:
+        return jsonify({"error": "Failed to send email. Verify SMTP configurations."}), 500
+
+
+@app.post("/api/verify-otp")
+def api_verify_otp():
+    data = request.get_json(silent=True) or {}
+    email = data.get("email", "").strip()
+    code = data.get("code", "").strip()
+    
+    if not email or not code:
+        return jsonify({"error": "Email and code are required"}), 400
+    
+    saved_code = verification_codes.get(email)
+    if saved_code and saved_code == code:
+        verification_codes.pop(email, None)
+        return jsonify({"ok": True})
+    else:
+        return jsonify({"error": "Invalid verification code"}), 400
 
 
 if __name__ == "__main__":

@@ -6,6 +6,16 @@ const authSubmitButton = document.getElementById("authSubmitButton");
 const authSubtitle = document.getElementById("authSubtitle");
 const authToggleText = document.getElementById("authToggleText");
 const authToggleButton = document.getElementById("authToggleButton");
+const passwordLabel = document.getElementById("passwordLabel");
+const otpLabel = document.getElementById("otpLabel");
+const authOtp = document.getElementById("authOtp");
+
+const teacherButton = document.getElementById("teacherButton");
+const teacherPanel = document.getElementById("teacherPanel");
+const closeTeacher = document.getElementById("closeTeacher");
+const btnCreateSplitQuiz = document.getElementById("btnCreateSplitQuiz");
+const teacherQuizCount = document.getElementById("teacherQuizCount");
+const teacherPassingRate = document.getElementById("teacherPassingRate");
 
 const messagesEl = document.getElementById("messages");
 const emptyState = document.getElementById("emptyState");
@@ -68,6 +78,9 @@ if (localStorage.getItem("tb_session") === "active") {
 if (authToggleButton) {
   authToggleButton.addEventListener("click", () => {
     isRegistered = !isRegistered;
+    otpLabel.classList.add("hidden");
+    passwordLabel.classList.remove("hidden");
+    authOtp.removeAttribute("required");
     if (isRegistered) {
       authSubtitle.textContent = "Create an account to save your learning configurations.";
       authSubmitButton.textContent = "Sign Up";
@@ -83,17 +96,87 @@ if (authToggleButton) {
 }
 
 if (authForm) {
-  authForm.addEventListener("submit", (e) => {
+  authForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     const user = authUsername.value.trim();
     const pass = authPassword.value.trim();
     
-    if (user && pass) {
-      localStorage.setItem("tb_session", "active");
-      localStorage.setItem("tb_username", user);
-      if (authOverlay) authOverlay.classList.add("hidden");
-      addMessage("system", `Authenticated successfully as ${user}. Welcome back!`);
+    if (otpLabel.classList.contains("hidden")) {
+      authSubmitButton.disabled = true;
+      authSubmitButton.textContent = "Sending Code...";
+      try {
+        const res = await fetch("/api/send-otp", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: user }),
+        });
+        const data = await res.json();
+        authSubmitButton.disabled = false;
+        if (data.ok) {
+          otpLabel.classList.remove("hidden");
+          passwordLabel.classList.add("hidden");
+          authOtp.setAttribute("required", "true");
+          authSubtitle.textContent = "An OTP code has been sent to your Gmail inbox.";
+          authSubmitButton.textContent = "Verify & Login";
+        } else {
+          alert("Error: " + (data.error || "Failed to send code."));
+          authSubmitButton.textContent = isRegistered ? "Sign Up" : "Log In";
+        }
+      } catch (err) {
+        authSubmitButton.disabled = false;
+        authSubmitButton.textContent = isRegistered ? "Sign Up" : "Log In";
+        alert("Connection error: " + err.message);
+      }
+    } else {
+      const code = authOtp.value.trim();
+      authSubmitButton.disabled = true;
+      authSubmitButton.textContent = "Verifying...";
+      try {
+        const res = await fetch("/api/verify-otp", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: user, code: code }),
+        });
+        const data = await res.json();
+        authSubmitButton.disabled = false;
+        if (data.ok) {
+          localStorage.setItem("tb_session", "active");
+          localStorage.setItem("tb_username", user);
+          if (authOverlay) authOverlay.classList.add("hidden");
+          addMessage("system", `Authenticated successfully via Gmail SMTP OTP as ${user}.`);
+        } else {
+          alert("Error: " + (data.error || "Invalid OTP code."));
+          authSubmitButton.textContent = "Verify & Login";
+        }
+      } catch (err) {
+        authSubmitButton.disabled = false;
+        authSubmitButton.textContent = "Verify & Login";
+        alert("Connection error: " + err.message);
+      }
     }
+  });
+}
+
+// Teacher Studio Controllers
+if (teacherButton) {
+  teacherButton.addEventListener("click", () => {
+    teacherPanel.classList.remove("hidden");
+    teacherPanel.setAttribute("aria-hidden", "false");
+  });
+}
+if (closeTeacher) {
+  closeTeacher.addEventListener("click", () => {
+    teacherPanel.classList.add("hidden");
+    teacherPanel.setAttribute("aria-hidden", "true");
+  });
+}
+if (btnCreateSplitQuiz) {
+  btnCreateSplitQuiz.addEventListener("click", () => {
+    const qCount = teacherQuizCount.value;
+    teacherPanel.classList.add("hidden");
+    teacherPanel.setAttribute("aria-hidden", "true");
+    const topic = profile.subject || "General";
+    sendPrompt(`/quiz ${topic} count=${qCount}`);
   });
 }
 
