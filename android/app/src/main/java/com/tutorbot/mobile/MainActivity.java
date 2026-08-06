@@ -69,7 +69,11 @@ public class MainActivity extends Activity {
         });
 
         setContentView(webView);
-        webView.loadUrl(TUTORBOT_URL);
+        String targetUrl = getIntent().getStringExtra("URL");
+        if (targetUrl == null || targetUrl.isEmpty()) {
+            targetUrl = TUTORBOT_URL;
+        }
+        webView.loadUrl(targetUrl);
         requestAudioPermission();
         requestCameraPermission();
     }
@@ -93,6 +97,8 @@ public class MainActivity extends Activity {
             }
         }
     }
+
+    private void requestAudioPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
                     != PackageManager.PERMISSION_GRANTED) {

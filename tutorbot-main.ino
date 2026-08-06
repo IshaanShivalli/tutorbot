@@ -2,11 +2,11 @@
 #include <WebServer.h>
 #include <HTTPClient.h>
 
-// Replace with your network credentials
+// ---- Wi-Fi credentials ----
 const char* ssid = "YOUR_WIFI_SSID";
 const char* password = "YOUR_WIFI_PASSWORD";
 
-// Replace with your PC's local IP and server port
+// ---- TutorBot PC server (Server.py) ----
 // Example: http://192.168.1.100:5000
 const char* pcBaseUrl = "http://192.168.1.100:5000";
 
@@ -27,31 +27,30 @@ void handleOptions() {
   server.send(204);
 }
 
-void handleHealth() {
-  sendCorsHeaders();
-  server.send(200, "application/json", "{\"ok\":true,\"service\":\"TutorBot ESP32 relay\"}");
+bool wifiUp() {
+  return WiFi.status() == WL_CONNECTED;
 }
 
-void handleAsk() {
+// ---- Generic JSON POST relay: forwards raw body to a PC path, returns PC's response verbatim ----
+void relayJsonPost(const char* pcPath, uint32_t timeoutMs) {
   sendCorsHeaders();
 
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", "{\"error\":\"Request body required\"}");
     return;
   }
-
-  if (WiFi.status() != WL_CONNECTED) {
+  if (!wifiUp()) {
     server.send(503, "application/json", "{\"error\":\"ESP32 is not connected to Wi-Fi\"}");
     return;
   }
 
   HTTPClient http;
-  http.setTimeout(120000);
-  http.begin(pcUrl("/ai-chat"));
+  http.setTimeout(timeoutMs);
+  http.begin(pcUrl(pcPath));
   http.addHeader("Content-Type", "application/json");
 
   int statusCode = http.POST(server.arg("plain"));
-  String response = http.getString();
+  String response = statusCode > 0 ? http.getString() : "";
   http.end();
 
   if (statusCode > 0) {
@@ -61,40 +60,125 @@ void handleAsk() {
   }
 }
 
-void handleFileRoutes() {
+// ---- Generic GET relay: fetches a PC path, returns its response verbatim ----
+void relayGet(const char* pcPath, uint32_t timeoutMs) {
   sendCorsHeaders();
-  if (server.method() == HTTP_POST) {
-    // Handle file upload relay
-    if (!server.hasArg("plain") && server.args() == 0) {
-      server.send(400, "application/json", "{\"error\":\"No file provided\"}");
-      return;
-    }
-    
-    if (WiFi.status() != WL_CONNECTED) {
-      server.send(503, "application/json", "{\"error\":\"ESP32 not connected to Wi-Fi\"}");
-      return;
-    }
-    
-    // Relay file upload to PC server
-    HTTPClient http;
-    http.setTimeout(180000);
-    http.begin(pcUrl("/files"));
-    http.addHeader("Content-Type", "multipart/form-data");
-    
-    int statusCode = http.POST(server.arg("plain"));
-    String response = http.getString();
-    http.end();
-    
+
+  if (!wifiUp()) {
+    server.send(503, "application/json", "{\"error\":\"ESP32 is not connected to Wi-Fi\"}");
+    return;
+  }
+
+  HTTPClient http;
+  http.setTimeout(timeoutMs);
+  http.begin(pcUrl(pcPath));
+
+  int statusCode = http.GET();
+  String response = statusCode > 0 ? http.getString() : "";
+  http.end();
+
+  if (statusCode > 0) {
     server.send(statusCode, "application/json", response);
   } else {
-    // GET request - return info about file operations
-    String body = "{";
-    body += "\"upload_url\":\"" + pcUrl("/files") + "\",";
-    body += "\"list_url\":\"" + pcUrl("/files") + "\",";
-    body += "\"note\":\"Files relay through ESP32 to PC. Upload directly to " + pcUrl("/files") + " for best speed.\"";
-    body += "}";
-    server.send(200, "application/json", body);
+    server.send(502, "application/json", "{\"error\":\"Could not reach TutorBot PC server\"}");
   }
+}
+
+// ---- /health : answered locally by the ESP32 itself ----
+void handleHealth() {
+  sendCorsHeaders();
+  server.send(200, "application/json", "{\"ok\":true,\"service\":\"TutorBot ESP32 relay\"}");
+}
+
+// ---- /ai-chat : main chat + slash-commands, relayed to PC ----
+void handleAiChat() {
+  relayJsonPost("/ai-chat", 120000); // generation can be slow, allow up to 120s
+}
+
+// ---- /clear : reset chat history on PC ----
+void handleClear() {
+  relayJsonPost("/clear", 15000);
+}
+
+// ---- /commands : slash-command list for autocomplete ----
+void handleCommands() {
+  relayGet("/commands", 15000);
+}
+
+// ---- /esp32/settings (GET) : read stored SSID/password-set flag from PC ----
+void handleEsp32SettingsGet() {
+  relayGet("/esp32/settings", 15000);
+}
+
+// ---- /esp32/settings (POST) : store SSID/password on PC for reference ----
+void handleEsp32SettingsPost() {
+  relayJsonPost("/esp32/settings", 15000);
+}
+
+// NOTE on multipart routes (/process-image, /files upload):
+// ESP32's WebServer buffers the whole multipart body into server.arg("plain"),
+// which works for small images but is memory-limited (ESP32 has ~300KB free heap).
+// For anything beyond small photos, point the phone app at the PC server directly
+// for these two routes instead of relaying through the ESP32 -- see notes below.
+
+void handleProcessImage() {
+  sendCorsHeaders();
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"No image data provided\"}");
+    return;
+  }
+  if (!wifiUp()) {
+    server.send(503, "application/json", "{\"error\":\"ESP32 is not connected to Wi-Fi\"}");
+    return;
+  }
+
+  HTTPClient http;
+  http.setTimeout(60000);
+  http.begin(pcUrl("/process-image"));
+  // Forward whatever content-type the phone sent (multipart boundary included)
+  if (server.hasHeader("Content-Type")) {
+    http.addHeader("Content-Type", server.header("Content-Type"));
+  }
+
+  int statusCode = http.POST((uint8_t*)server.arg("plain").c_str(), server.arg("plain").length());
+  String response = statusCode > 0 ? http.getString() : "";
+  http.end();
+
+  if (statusCode > 0) {
+    server.send(statusCode, "application/json", response);
+  } else {
+    server.send(502, "application/json", "{\"error\":\"Could not reach TutorBot PC server\"}");
+  }
+}
+
+void handleFilesGet() {
+  relayGet("/files", 15000);
+}
+
+void handleFilesPost() {
+  sendCorsHeaders();
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"No file data provided\"}");
+    return;
+  }
+  if (!wifiUp()) {
+    server.send(503, "application/json", "{\"error\":\"ESP32 is not connected to Wi-Fi\"}");
+    return;
+  }
+
+  HTTPClient http;
+  http.setTimeout(60000);
+  http.begin(pcUrl("/files"));
+  if (server.hasHeader("Content-Type")) {
+    http.addHeader("Content-Type", server.header("Content-Type"));
+  }
+
+  int statusCode = http.POST((uint8_t*)server.arg("plain").c_str(), server.arg("plain").length());
+  String response = statusCode > 0 ? http.getString() : "";
+  http.end();
+
+  server.send(statusCode > 0 ? statusCode : 502, "application/json",
+              statusCode > 0 ? response : "{\"error\":\"Could not reach TutorBot PC server\"}");
 }
 
 void setup() {
@@ -107,18 +191,32 @@ void setup() {
     delay(500);
     Serial.print(".");
   }
-
   Serial.println();
-  Serial.print("ESP32 relay: http://");
+  Serial.print("ESP32 relay IP: http://");
   Serial.println(WiFi.localIP());
-  Serial.print("TutorBot PC server: ");
+  Serial.print("Relaying to TutorBot PC server: ");
   Serial.println(pcBaseUrl);
 
   server.on("/health", HTTP_GET, handleHealth);
-  server.on("/ask", HTTP_OPTIONS, handleOptions);
-  server.on("/ask", HTTP_POST, handleAsk);
+
+  server.on("/ai-chat", HTTP_OPTIONS, handleOptions);
+  server.on("/ai-chat", HTTP_POST, handleAiChat);
+
+  server.on("/clear", HTTP_OPTIONS, handleOptions);
+  server.on("/clear", HTTP_POST, handleClear);
+
+  server.on("/commands", HTTP_GET, handleCommands);
+
+  server.on("/esp32/settings", HTTP_GET, handleEsp32SettingsGet);
+  server.on("/esp32/settings", HTTP_OPTIONS, handleOptions);
+  server.on("/esp32/settings", HTTP_POST, handleEsp32SettingsPost);
+
+  server.on("/process-image", HTTP_OPTIONS, handleOptions);
+  server.on("/process-image", HTTP_POST, handleProcessImage);
+
+  server.on("/files", HTTP_GET, handleFilesGet);
   server.on("/files", HTTP_OPTIONS, handleOptions);
-  server.on("/files", HTTP_GET, handleFileRoutes);
+  server.on("/files", HTTP_POST, handleFilesPost);
 
   server.begin();
   Serial.println("TutorBot ESP32 relay started");

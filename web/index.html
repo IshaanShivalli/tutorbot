@@ -1,177 +1,192 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <title>TutorBot</title>
-    <link rel="stylesheet" href="/styles.css">
-  </head>
-  <body>
-    <main class="app-shell">
-      <header class="topbar">
-        <div class="topbar-title">
-          <div>
-            <h1>TutorBot</h1>
-            <p id="status">Connecting...</p>
-          </div>
-        </div>
-        <div class="topbar-actions">
-          <button id="voiceButton" class="icon-button" title="Voice input" aria-label="Voice input">🎙</button>
-          <button id="ttsButton" class="icon-button" title="Toggle speech output" aria-label="Toggle speech output">🔊</button>
-          <button id="clearButton" class="icon-button" title="Clear chat" aria-label="Clear chat">🧹</button>
-          <button id="settingsButton" class="icon-button" title="Settings" aria-label="Settings">⚙</button>
-        </div>
-      </header>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TutorBot Studio — Your AI Learning Partner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div class="page">
 
-      <section class="profile-banner" aria-live="polite">
-        <div>
-          <p class="profile-label">Learning focus</p>
-          <p id="profileText">Grade 9 • General</p>
-        </div>
-        <button id="changeFocusButton" type="button" class="pill-button">Change focus</button>
-      </section>
-
-      <section class="messages-wrapper">
-        <div id="messages" class="messages" aria-live="polite"></div>
-      </section>
-
-      <aside id="focusModal" class="focus-modal hidden" aria-hidden="true">
-        <div class="focus-card">
-          <div class="focus-heading">
-            <h2>Set your learning profile</h2>
-            <button id="closeFocusModal" class="icon-button" title="Close" aria-label="Close">×</button>
-          </div>
-          <p>Select your current grade and the subject you want TutorBot to focus on.</p>
-          <label>
-            Grade level
-            <select id="gradeSelect">
-              <option value="Grade 6">Grade 6</option>
-              <option value="Grade 7">Grade 7</option>
-              <option value="Grade 8">Grade 8</option>
-              <option value="Grade 9">Grade 9</option>
-              <option value="Grade 10">Grade 10</option>
-              <option value="Grade 11">Grade 11</option>
-              <option value="Grade 12">Grade 12</option>
-              <option value="College">College</option>
-              <option value="Adult">Adult</option>
-            </select>
-          </label>
-          <label>
-            Subject focus
-            <select id="subjectSelect">
-              <option value="General">General</option>
-              <option value="Mathematics">Mathematics</option>
-              <option value="Science">Science</option>
-              <option value="English">English</option>
-              <option value="History">History</option>
-              <option value="Computer Science">Computer Science</option>
-              <option value="Languages">Languages</option>
-              <option value="Art">Art</option>
-              <option value="Music">Music</option>
-            </select>
-          </label>
-          <button id="saveFocusButton" type="button">Save learning profile</button>
-        </div>
-      </aside>
-
-      <section class="composer">
-        <div id="suggestions" class="suggestions"></div>
-        <form id="chatForm" class="chat-form">
-          <div class="input-wrapper">
-            <textarea id="promptInput" rows="1" placeholder="Ask TutorBot or type /help"></textarea>
-            <div class="composer-actions">
-              <div class="dropdown-wrapper">
-                <button id="uploadMenuButton" type="button" title="Upload options">📎</button>
-                <div id="uploadMenu" class="upload-menu hidden">
-                  <button type="button" id="menuUploadImage" class="menu-item">📤 Upload image</button>
-                  <button type="button" id="menuUseCamera" class="menu-item">📷 Use camera</button>
-                  <button type="button" id="menuProcessImage" class="menu-item">🖼️ Process image</button>
-                  <button type="button" id="menuFiles" class="menu-item">📁 Files</button>
-                </div>
-              </div>
-              <button id="sendButton" type="submit">Send</button>
-            </div>
-          </div>
-          <input id="fileInput" type="file" accept="image/*" capture="environment" style="display: none;">
-          <input id="filesInput" type="file" accept="image/*,.pdf,.doc,.docx,.txt" style="display: none;" multiple>
-        </form>
-        <div id="cameraPanel" class="camera-panel hidden">
-          <video id="cameraPreview" class="camera-preview" autoplay playsinline muted></video>
-          <div class="camera-actions">
-            <button id="captureButton" type="button">Capture</button>
-            <button id="cancelCameraButton" type="button">Cancel</button>
-          </div>
-        </div>
-      </section>
-
-      <section id="filesPanel" class="files-panel hidden" aria-hidden="true">
-        <div class="files-card">
-          <div class="files-heading">
-            <h2>Uploaded files</h2>
-            <button id="closeFiles" class="icon-button" title="Close files" aria-label="Close">×</button>
-          </div>
-          <ul id="filesList" class="files-list"></ul>
-          <p class="files-note">Files upload directly to the PC server for best speed. Download links open in a new tab.</p>
-        </div>
-      </section>
-    </main>
-
-    <aside id="settingsPanel" class="settings-panel" aria-hidden="true">
-      <div class="settings-card">
-        <div class="settings-heading">
-          <h2>Settings</h2>
-          <button id="closeSettings" class="icon-button" title="Close" aria-label="Close">×</button>
-        </div>
-
-        <label>
-          ESP32 Wi-Fi SSID
-          <input id="ssidInput" autocomplete="off" placeholder="Your Wi-Fi name">
-        </label>
-
-        <label>
-          ESP32 Wi-Fi Password
-          <input id="passwordInput" type="password" autocomplete="new-password" placeholder="Your Wi-Fi password">
-        </label>
-
-        <label>
-          Interface language
-          <select id="languageSelect">
-            <option value="English">English</option>
-            <option value="Spanish">Español</option>
-            <option value="French">Français</option>
-            <option value="German">Deutsch</option>
-            <option value="Chinese">中文</option>
-            <option value="Portuguese">Português</option>
-            <option value="Japanese">日本語</option>
-            <option value="Russian">Русский</option>
-            <option value="Arabic">العربية</option>
-            <option value="Hindi">हिन्दी</option>
-          </select>
-        </label>
-
-        <label>
-          Preferred learning language
-          <select id="learningLanguageSelect">
-            <option value="English">English</option>
-            <option value="Spanish">Español</option>
-            <option value="French">Français</option>
-            <option value="German">Deutsch</option>
-            <option value="Chinese">中文</option>
-            <option value="Portuguese">Português</option>
-            <option value="Japanese">日本語</option>
-            <option value="Russian">Русский</option>
-            <option value="Arabic">العربية</option>
-            <option value="Hindi">हिन्दी</option>
-          </select>
-        </label>
-
-        <button id="saveSettings" type="button">Save Settings</button>
-        <p class="settings-note">
-          These settings are stored on the TutorBot PC server for setup reference. To change the ESP32 network, flash the sketch with the same SSID and password.
-        </p>
+  <aside id="authOverlay" class="auth-overlay">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <span class="auth-logo">TB</span>
+        <h2>TutorBot Studio</h2>
       </div>
-    </aside>
+      <p class="auth-subtitle" id="authSubtitle">Log in to sync your grades, quizzes, and chat history.</p>
+      
+      <form id="authForm">
+        <label class="field-label" id="usernameLabel">Username or Email
+          <input type="text" id="authUsername" required placeholder="Enter username">
+        </label>
+        <label class="field-label">Password
+          <input type="password" id="authPassword" required placeholder="••••••••">
+        </label>
+        <button type="submit" id="authSubmitButton" class="btn-solid full">Log In</button>
+      </form>
+      
+      <div class="auth-toggle">
+        <span id="authToggleText">New to TutorBot?</span>
+        <button id="authToggleButton" type="button">Create Account</button>
+      </div>
+    </div>
+  </aside>
 
-    <script src="/app.js"></script>
-  </body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">TB</span>
+      <div class="brand-text">
+        <h1>TutorBot</h1>
+        <p id="status" class="status">connecting…</p>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <button id="voiceButton" class="ibtn" aria-label="Voice input" title="Voice input">
+        <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z"/><path d="M19 11a7 7 0 0 1-14 0M12 18v3"/></svg>
+      </button>
+      <button id="ttsButton" class="ibtn" aria-label="Toggle speech output" title="Toggle speech output">
+        <svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4Z"/><path d="M17 8a5 5 0 0 1 0 8"/></svg>
+      </button>
+      <button id="clearButton" class="ibtn" aria-label="Clear chat" title="Clear chat">
+        <svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>
+      </button>
+      <button id="settingsButton" class="ibtn" aria-label="Settings" title="Settings">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.07-.4.1-.8.1-1.2Z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <section class="focus-strip">
+    <div class="focus-rule" aria-hidden="true"></div>
+    <div class="focus-info">
+      <span class="focus-label">Learning focus</span>
+      <span id="profileText" class="focus-value">Grade 9 · General</span>
+    </div>
+    <button id="changeFocusButton" class="pill">Change</button>
+  </section>
+
+  <main class="stage">
+    <div id="messages" class="messages" aria-live="polite">
+      <div class="empty-state" id="emptyState">
+        <p class="empty-kicker">no messages yet</p>
+        <p class="empty-title">Ask a question, paste a problem, or try <code>/quiz photosynthesis</code></p>
+      </div>
+    </div>
+  </main>
+
+  <div id="suggestions" class="suggestions hidden"></div>
+
+  <footer class="composer">
+    <div id="cameraPanel" class="camera-panel hidden">
+      <video id="cameraPreview" class="camera-preview" autoplay playsinline muted></video>
+      <div class="camera-actions">
+        <button id="captureButton" class="btn-solid" type="button">Capture</button>
+        <button id="cancelCameraButton" class="btn-ghost" type="button">Cancel</button>
+      </div>
+    </div>
+
+    <form id="chatForm" class="chat-form">
+      <div class="field">
+        <div class="dropdown-wrapper">
+          <button id="uploadMenuButton" class="ibtn attach" type="button" aria-label="Upload options" title="Upload options">
+            <svg viewBox="0 0 24 24"><path d="M21 12.5 12.5 21a5 5 0 0 1-7-7L14 5.5a3.5 3.5 0 0 1 5 5L10.5 19a2 2 0 0 1-3-3L15 8.5"/></svg>
+          </button>
+          <div id="uploadMenu" class="upload-menu hidden">
+            <button type="button" id="menuUploadImage" class="menu-item">Upload image</button>
+            <button type="button" id="menuUseCamera" class="menu-item">Use camera</button>
+            <button type="button" id="menuProcessImage" class="menu-item">Process image (OCR)</button>
+            <button type="button" id="menuFiles" class="menu-item">Files</button>
+          </div>
+        </div>
+        <textarea id="promptInput" rows="1" placeholder="Ask TutorBot or type /help"></textarea>
+        <button id="sendButton" class="send" type="submit" aria-label="Send">
+          <svg viewBox="0 0 24 24"><path d="M4 12h15M13 6l6 6-6 6"/></svg>
+        </button>
+      </div>
+    </form>
+    <input id="fileInput" type="file" accept="image/*" capture="environment" style="display:none;">
+    <input id="filesInput" type="file" accept="image/*,.pdf,.doc,.docx,.txt" style="display:none;" multiple>
+  </footer>
+
+  <aside id="focusModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2>Learning profile</h2>
+        <button id="closeFocusModal" class="ibtn" aria-label="Close">×</button>
+      </div>
+      <p class="modal-copy">Set your grade and the subject you want TutorBot to lean into.</p>
+      <label class="field-label">Grade level
+        <select id="gradeSelect">
+          <option>Grade 6</option><option>Grade 7</option><option>Grade 8</option>
+          <option selected>Grade 9</option><option>Grade 10</option><option>Grade 11</option>
+          <option>Grade 12</option><option>College</option><option>Adult</option>
+        </select>
+      </label>
+      <label class="field-label">Subject focus
+        <select id="subjectSelect">
+          <option selected>General</option><option>Mathematics</option><option>Science</option>
+          <option>English</option><option>History</option><option>Computer Science</option>
+          <option>Languages</option><option>Art</option><option>Music</option>
+        </select>
+      </label>
+      <button id="saveFocusButton" class="btn-solid full" type="button">Save profile</button>
+    </div>
+  </aside>
+
+  <aside id="filesPanel" class="modal hidden" aria-hidden="true">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2>Files</h2>
+        <button id="closeFiles" class="ibtn" aria-label="Close">×</button>
+      </div>
+      <ul id="filesList" class="files-list"></ul>
+      <p class="modal-note">Files upload directly to the PC server. Download links open in a new tab.</p>
+    </div>
+  </aside>
+
+  <aside id="settingsPanel" class="modal hidden" aria-hidden="true">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2>Settings</h2>
+        <button id="closeSettings" class="ibtn" aria-label="Close">×</button>
+      </div>
+
+      <label class="field-label">ESP32 Wi-Fi SSID
+        <input id="ssidInput" autocomplete="off" placeholder="Your Wi-Fi name">
+      </label>
+      <label class="field-label">ESP32 Wi-Fi password
+        <input id="passwordInput" type="password" autocomplete="new-password" placeholder="Your Wi-Fi password">
+      </label>
+      <label class="field-label">Interface language
+        <select id="languageSelect">
+          <option value="English">English</option><option value="Spanish">Español</option>
+          <option value="French">Français</option><option value="German">Deutsch</option>
+          <option value="Chinese">中文</option><option value="Portuguese">Português</option>
+          <option value="Japanese">日本語</option><option value="Russian">Русский</option>
+          <option value="Arabic">العربية</option><option value="Hindi">हिन्दी</option>
+        </select>
+      </label>
+      <label class="field-label">Preferred learning language
+        <select id="learningLanguageSelect">
+          <option value="English">English</option><option value="Spanish">Español</option>
+          <option value="French">Français</option><option value="German">Deutsch</option>
+          <option value="Chinese">中文</option><option value="Portuguese">Português</option>
+          <option value="Japanese">日本語</option><option value="Russian">Русский</option>
+          <option value="Arabic">العربية</option><option value="Hindi">हिन्दी</option>
+        </select>
+      </label>
+
+      <button id="saveSettings" class="btn-solid full" type="button">Save settings</button>
+      <p class="modal-note">Stored on the TutorBot PC server for setup reference. To change the ESP32 network, reflash tutorbot-main.ino with the same SSID and password.</p>
+    </div>
+  </aside>
+
+</div>
+<script src="/app.js"></script>
+</body>
 </html>
