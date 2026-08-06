@@ -1,10 +1,10 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <HTTPClient.h>
-
+#include <LittleFS.h>
 // ---- Wi-Fi credentials ----
-const char* ssid = "YOUR_WIFI_SSID";
-const char* password = "YOUR_WIFI_PASSWORD";
+const char* ssid = "Vikas's A06";
+const char* password = "Superman123!";
 
 // ---- TutorBot PC server (Server.py) ----
 // Example: http://192.168.1.100:5000
@@ -58,6 +58,16 @@ void relayJsonPost(const char* pcPath, uint32_t timeoutMs) {
   } else {
     server.send(502, "application/json", "{\"error\":\"Could not reach TutorBot PC server\"}");
   }
+}
+
+void handleRoot() {
+  File file = LittleFS.open("/index.html", "r");
+  if (!file) {
+    server.send(500, "text/plain", "index.html not found");
+    return;
+  }
+  server.streamFile(file, "text/html");
+  file.close();
 }
 
 // ---- Generic GET relay: fetches a PC path, returns its response verbatim ----
@@ -196,6 +206,18 @@ void setup() {
   Serial.println(WiFi.localIP());
   Serial.print("Relaying to TutorBot PC server: ");
   Serial.println(pcBaseUrl);
+  if (!LittleFS.begin(true)) {
+    Serial.println("LittleFS Mount Failed");
+    return;
+  }
+  Serial.println(LittleFS.exists("/index.html"));
+  Serial.println(LittleFS.exists("/app.js"));
+  Serial.println(LittleFS.exists("/styles.css"));
+
+  server.on("/", HTTP_GET, handleRoot);
+
+  server.serveStatic("/app.js", LittleFS, "/app.js");
+  server.serveStatic("/styles.css", LittleFS, "/styles.css");
 
   server.on("/health", HTTP_GET, handleHealth);
 
