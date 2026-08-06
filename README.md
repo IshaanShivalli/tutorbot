@@ -1,180 +1,111 @@
 # TutorBot
 
-TutorBot is a local AI tutor with a terminal UI, a mobile-friendly web interface, an ESP32 relay sketch, and an Android WebView wrapper. It runs a small GGUF language model on your PC, answers tutoring questions, generates quizzes, exports Word documents, and can be accessed from a phone on the same network.
+TutorBot is a local AI tutor that runs on your PC and supports a terminal interface, a mobile-friendly web UI, an ESP32 phone bridge, and an Android WebView wrapper.
 
-## Features
+It uses local GGUF models and on-device OCR to answer questions, generate quizzes, export Word documents, and practice spelling with a dedicated Spell Practice mode.
 
-- **Conversational tutoring:** A Socratic tutor that explains concepts, asks follow-up questions, and helps students reason through problems.
-- **Quiz generation:** The `/quiz` command creates focused quizzes using optional web reference material.
-- **Word document export:** The `/doc` command exports the latest quiz as a `.docx` file, with optional answer keys.
-- **Reference search:** The `/search` command fetches reference material for a topic.
-- **Terminal UI:** Run TutorBot locally in the Textual-based command-line interface.
-- **Mobile web UI:** Run `Server.py` and open TutorBot from a phone browser.
-- **ESP32 relay:** Forward phone chat requests through an ESP32 to the PC running TutorBot.
-- **Android wrapper:** Build a WebView APK/App Bundle that loads the TutorBot web interface.
-- **Local model:** Powered by `llama-cpp-python`; no external AI API key is required.
+## Key Features
+
+- **AI tutoring:** Ask questions, get explanations, and follow-up guidance.
+- **Spelling practice:** Use the Spell Practice button in the mobile UI for pronunciation and spelling drills.
+- **Quiz generation:** Create quizzes with `/quiz` and optional web reference content.
+- **Document export:** Save quizzes as `.docx` files with answer keys.
+- **Image OCR:** Upload or capture images to extract text using Tesseract.
+- **Local model execution:** Runs with `llama-cpp-python` and local GGUF models.
+- **Mobile web interface:** Access TutorBot from a phone browser on the same network.
+- **ESP32 relay bridge:** Relay phone requests through an ESP32 to the PC.
+- **Android wrapper:** Load the mobile UI inside a WebView app.
 
 ## Prerequisites
 
 - Python 3.9 or higher
 - Pip
-- A local GGUF model in `models/`
-- Tesseract OCR installed on your PC for OCR image processing
-- For Android builds: Android Studio
-- For ESP32 builds: Arduino IDE or PlatformIO with ESP32 board support
+- Local GGUF model files in `models/`
+- Tesseract OCR installed for image text extraction
+- Android Studio for building the Android wrapper
+- Arduino IDE or PlatformIO for ESP32 support
 
 ## Installation
+
+Install Python dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### Downloading the models
+## Models
 
-TutorBot needs at least one local GGUF model in `models/` before it can run.
+Place the required model files in `models/` before running the app.
 
-- Main chat model: `models/qwen2.5-0.5b-instruct-q4_k_m.gguf`
-- Lightweight image model: `models/llama-2-1.1b.gguf`
+- `models/qwen2.5-0.5b-instruct-q4_k_m.gguf`
+- `models/llama-2-1.1b.gguf`
 
-The repository includes the packages needed for local execution and model downloads.
+If you need to download models, use the Hugging Face CLI or Python module.
 
-If you do not already have the Hugging Face CLI installed, install it first:
+Example with Hugging Face CLI:
 
 ```bash
 pip install huggingface-hub
-```
-
-Then log in and download the models:
-
-```bash
 huggingface-cli login
 hf download Qwen/Qwen2.5-0.5B-Instruct-GGUF qwen2.5-0.5b-instruct-q4_k_m.gguf --local-dir models
 ```
 
-For the lightweight image model, use a valid public GGUF repository with a model under 2B parameters. One known public example is `unsloth/Inkling-Small-GGUF`.
-
-Download it and save it to `models/llama-2-1.1b.gguf` so it matches the configured path in `config.py`.
-
-```bash
-hf download unsloth/Inkling-Small-GGUF llama-2-1.1b.gguf --local-dir models
-```
-
-If you want to choose a different model, search Hugging Face for a public GGUF model and use the same download pattern:
-
-```text
-https://huggingface.co/models?search=gguf+1.1b
-```
-
-Then download your chosen repo and save the file as `models/llama-2-1.1b.gguf`, or update `IMAGE_MODEL_PATH` in `config.py` if you keep a different filename.
-
-If `hf` is not available, you can also use the Python module:
+Example with Python:
 
 ```bash
 python -m huggingface_hub download Qwen/Qwen2.5-0.5B-Instruct-GGUF --filename qwen2.5-0.5b-instruct-q4_k_m.gguf --cache-dir models
 python -m huggingface_hub download meta-llama/Llama-2-1.1B-GGUF --filename llama-2-1.1b.gguf --cache-dir models
 ```
 
-If you prefer, download the model files directly from Hugging Face and place them inside the `models/` folder.
+Update `IMAGE_MODEL_PATH` in `config.py` if you save a different image model filename.
 
-### Email verification setup
+## Running TutorBot
 
-If you want account registration and login verification to work properly, configure `EMAIL_FROM` to match the SMTP account used by `SMTP_USER` when using Gmail or other providers that require a verified sender address.
-
-Update `config.py` with your email server settings:
-
-```python
-EMAIL_FROM = "your-email@example.com"
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
-SMTP_USER = "your-email@example.com"
-SMTP_PASSWORD = "your-app-password"
-SMTP_USE_TLS = True
-```
-
-If email delivery fails, login and registration verification codes may not be sent, but the account will still be created locally.
-
-## Terminal App
-
-Run:
+### Terminal UI
 
 ```bash
 python main.py
 ```
 
-Useful commands:
+### Web/mobile UI
 
-| Command | Description |
-|---|---|
-| `/quiz <topic>` | Generate a quiz |
-| `/doc [answers\|split]` | Export the latest quiz as Word documents |
-| `/search <query>` | Search for reference material |
-| `/model` | Show model information |
-| `/clear` | Clear the conversation |
-| `/help` | Show all commands |
-| `/exit` | Exit TutorBot |
-
-## PC Server, Web App, and API
-
-Run:
-
-```powershell
-python .\Server.py
+```bash
+python Server.py
 ```
 
-Expected startup message:
-
-```text
-TutorBot server running at http://0.0.0.0:5000/
-```
-
-Open the web interface on the PC:
+Open on your PC:
 
 ```text
 http://localhost:5000/
 ```
 
-Open it from a phone on the same Wi-Fi:
+Open on your phone on the same network:
 
 ```text
 http://YOUR_PC_IP:5000/
 ```
 
-Find your PC IP on Windows:
+### Android wrapper
 
-```powershell
-ipconfig
-```
+Open the `android/` folder in Android Studio and set your TutorBot server URL in `MainActivity.java`.
 
-Use the IPv4 address for your active Wi-Fi adapter.
+## Commands
 
-### Server Endpoints
+### Terminal commands
 
-| Endpoint | Method | Description |
-|---|---|---|
-| `/` | `GET` | Mobile-friendly TutorBot web interface |
-| `/health` | `GET` | Server health check |
-| `/commands` | `GET` | Slash-command metadata for the web UI |
-| `/ai-chat` | `POST` | Send TutorBot prompts or slash commands |
-| `/clear` | `POST` | Clear server chat history |
-| `/esp32/settings` | `GET/POST` | Store ESP32 Wi-Fi setup values on the PC server |
-| `/files` | `POST` | Upload a file using multipart field `file` |
-| `/files` | `GET` | List uploaded files |
-| `/files/<filename>` | `GET` | Download uploaded files |
-| `/downloads/<filename>` | `GET` | Download generated quiz documents |
+| Command | Description |
+|---|---|
+| `/quiz <topic>` | Generate a quiz |
+| `/doc [answers\|split]` | Export the latest quiz |
+| `/search <query>` | Search for reference material |
+| `/model` | Show model information |
+| `/clear` | Clear the conversation |
+| `/help` | Show available commands |
+| `/exit` | Exit TutorBot |
 
-Example chat request:
+### Mobile/web commands
 
-```json
-{"prompt": "Teach me Newton's second law"}
-```
-
-Example command request:
-
-```json
-{"prompt": "/quiz photosynthesis grade=8 count=5 web=y"}
-```
-
-The web/mobile UI supports:
+The mobile UI uses persistent buttons and a chat prompt for commands. The Spell Practice button is the only way to open spelling and pronunciation practice in the mobile interface.
 
 | Command | Description |
 |---|---|
@@ -187,11 +118,34 @@ The web/mobile UI supports:
 | `/doc answers` | Export quiz with answer key |
 | `/doc split` | Export quiz and answer key as separate files |
 
+## Server API
+
+### Endpoints
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/` | `GET` | Load the mobile-friendly TutorBot UI |
+| `/health` | `GET` | Health check |
+| `/commands` | `GET` | Get available slash commands |
+| `/ai-chat` | `POST` | Send prompts or commands |
+| `/clear` | `POST` | Clear server chat history |
+| `/esp32/settings` | `GET/POST` | Save ESP32 network settings |
+| `/files` | `POST` | Upload a file |
+| `/files` | `GET` | List uploaded files |
+| `/files/<filename>` | `GET` | Download an uploaded file |
+| `/downloads/<filename>` | `GET` | Download generated quiz documents |
+
+### Example request
+
+```json
+{"prompt": "Explain Newton's second law"}
+```
+
 ## ESP32 Phone Bridge
 
-The ESP32 sketch is in `tutorbot-main.ino`. It relays chat requests from the phone to the PC server and returns TutorBot's response.
+The ESP32 sketch lives in `tutorbot-main.ino` and relays chat requests from your phone to the PC server.
 
-Before flashing, edit:
+Before flashing, update the Wi-Fi and PC server URL:
 
 ```cpp
 const char* ssid = "YOUR_WIFI_NAME";
@@ -199,54 +153,21 @@ const char* password = "YOUR_WIFI_PASSWORD";
 const char* pcBaseUrl = "http://YOUR_PC_IP:5000";
 ```
 
-After flashing, open the Serial Monitor. It prints the ESP32 URL:
-
-```text
-ESP32 relay: http://ESP32_IP
-```
-
-Send phone chat requests through:
+After flashing, use the Serial Monitor to find the ESP32 URL, then send requests through:
 
 ```text
 http://ESP32_IP/ask
 ```
 
-Example JSON:
+## Android WebView App
 
-```json
-{"prompt": "Explain fractions with an example"}
-```
+Build the Android wrapper in Android Studio from the `android/` folder. Update `TUTORBOT_URL` in `MainActivity.java` and build an APK or App Bundle.
 
-For file transfer, use the PC server directly for best speed. The ESP32 exposes:
+## Notes
 
-```text
-http://ESP32_IP/files
-```
-
-That returns the PC file upload/list URLs. The ESP32 intentionally does not buffer large files in RAM.
-
-## ESP32 Wi-Fi Settings in the App
-
-The web/mobile interface includes a settings icon where you can enter an ESP32 SSID and password. These values are stored on the TutorBot PC server for setup reference.
-
-Important: a browser or Android WebView app cannot rewrite already-flashed ESP32 firmware by itself. To actually change the ESP32 Wi-Fi network, update and flash `tutorbot-main.ino` with the same values, or add ESP32 captive-portal provisioning later.
-
-## Android App
-
-An Android WebView wrapper is included in `android/`.
-
-To build:
-
-1. Open the `android/` folder in Android Studio.
-2. Edit `android/app/src/main/java/com/tutorbot/mobile/MainActivity.java`.
-3. Set `TUTORBOT_URL` to your TutorBot server URL.
-4. Build an APK for testing or a signed Android App Bundle for Play Store upload.
-
-For local testing:
-
-```java
-private static final String TUTORBOT_URL = "http://192.168.1.100:5000/";
-```
+- The mobile Spell Practice button is the supported spelling/pronunciation flow. `/spell` entry is disabled in the mobile chat prompt.
+- Keep your local GGUF models in `models/` for offline model execution.
+- Tesseract OCR must be installed on the PC for image processing.
 
 For a Play Store release, host TutorBot on a stable HTTPS domain. A local `192.168.x.x` address only works on your own Wi-Fi network.
 

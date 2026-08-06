@@ -46,6 +46,12 @@ body.light-theme .brand-text h1 {
   -webkit-text-fill-color: transparent;
 }
 
+body.light-theme .brand-text h1 span#streakDisplay {
+  color: #ffb347 !important;
+  -webkit-text-fill-color: initial !important;
+  background: none !important;
+}
+
 body.light-theme .history-sidebar {
   background: rgba(255, 255, 255, 0.96);
   border-right-color: rgba(10, 8, 18, 0.08);
@@ -148,13 +154,15 @@ button, input, textarea, select {
 }
 
 .page {
-  position: relative;
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 280px;
   display: flex;
   flex-direction: column;
   min-width: 0;
-  width: calc(100% - 280px);
-  margin-left: 280px;
-  height: 100dvh;
+  margin: 0;
   background: var(--panel);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);

@@ -24,8 +24,9 @@ from doc_generator import create_quiz_document ,create_quiz_and_answer_key
 from context_fetcher import get_context_for_topic 
 from vision_model import describe_image
 from Server import extract_image_text
-from .streak import update_streak_for_user
-from . import gamification ,analytics ,user_management 
+from .streak import update_streak_for_user, get_current_streak
+import voice
+from . import gamification ,analytics ,user_management
 from .commands import COMMANDS ,find_command ,suggest_commands ,render_help_text 
 from Server import google_translate, normalize_language
 
@@ -577,7 +578,9 @@ class TutorBotApp (App ):
 
     def handle_stats (self ,argument :str ):
         try :
-            profile =gamification .get_profile (streak_count =getattr (self ,"streak_count",0 ))
+            streak = get_current_streak ()
+            self .streak_count = streak .count
+            profile =gamification .get_profile (streak_count =self .streak_count )
             current_user = self .current_user ['username']
             weak_subject = user_management .get_user (current_user ) .get ("weak_subject") or "None"
         except Exception as e :
@@ -698,7 +701,7 @@ class TutorBotApp (App ):
         word =argument .strip ()
         if not word :
             words =self ._spell_words ()
-            word =random .choice (words .get (self ._current_grade (),words ["Grade 9"]))
+            word =random .choice (words .get (self ._current_grade (),words ["Grade 8"]))
         try :
             user =user_management .update_user_profile (
             self .current_user ["username"],
@@ -708,11 +711,16 @@ class TutorBotApp (App ):
             self .current_user =user
         except Exception :
             pass
+        try :
+            voice .say_text (word)
+            spoken_message = "Pronouncing the word now."
+        except Exception :
+            spoken_message = "Could not play pronunciation locally; please read the word aloud."
         self .add_message (
         "system",
         f"[bold #79c0ff]Spelling practice[/bold #79c0ff]\n"
         f"Word: [bold]{word}[/bold]\n"
-        "CLI cannot play browser speech, so read the word aloud or use the web Speak Word button for audio pronunciation.",
+        f"{spoken_message}",
         )
         self ._track ("spell_practice",topic =word )
 
@@ -789,7 +797,9 @@ class TutorBotApp (App ):
             self .add_message ("system","CLI chat history deleted for this session.")
             return
         user =user_management .get_user (self .current_user ["username"])or {}
-        profile =gamification .get_profile (streak_count =getattr (self ,"streak_count",0 ))
+        streak = get_current_streak ()
+        self .streak_count = streak .count
+        profile =gamification .get_profile (streak_count =self .streak_count )
         recent =self .history [-8 :]
         lines =[
         "[bold #79c0ff]Account History & Analysis[/bold #79c0ff]",
@@ -1087,9 +1097,9 @@ class TutorBotApp (App ):
             image_description =describe_image (image_path )
             prompt =(
             "I processed an image using OCR and layout analysis. "
-            "Explain only what is supported by the OCR text and layout summary. "
-            "If OCR text contains a question, solve it step by step. "
-            "If OCR is weak, ask for a clearer image.\n\n"
+            "Report only what is visible in the image and what text was extracted. "
+            "Do not infer missing words or guess the meaning of the question. "
+            "Do not solve anything unless it is explicitly shown in the image.\n\n"
             f"Image description:\n{image_description}\n\n"
             f"OCR text:\n{ocr_text}"
             )

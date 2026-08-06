@@ -62,8 +62,14 @@ const profileText = document.getElementById("profileText");
 const filesPanel = document.getElementById("filesPanel");
 const closeFiles = document.getElementById("closeFiles");
 const filesList = document.getElementById("filesList");
+const historySidebar = document.getElementById("historySidebar");
+const chatHistoryList = document.getElementById("chatHistoryList");
+const newChatButton = document.getElementById("newChatButton");
+const sidebarToggleButton = document.getElementById("sidebarToggleButton");
+const closeSidebarButton = document.getElementById("closeSidebarButton");
 
 let ttsEnabled = false;
+let activeChatId = localStorage.getItem(`tb_active_chat_${currentAccount()}`) || "";
 let mediaStream = null;
 let profile = loadJSON("tb_profile", { grade: "Grade 9", subject: "General" });
 let settings = loadJSON("tb_settings", { language: "English", learningLanguage: "English", ssid: "", password: "", theme: "dark" });
@@ -205,6 +211,142 @@ function saveJSON(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
 }
 
+function currentAccount() {
+  const session = localStorage.getItem("tb_session");
+  const username = (localStorage.getItem("tb_username") || "").trim().toLowerCase();
+  return session === "active" && username ? username : "guest";
+}
+
+function getChats() {
+  return loadJSON("tb_chats", []);
+}
+
+function saveChats(chats) {
+  saveJSON("tb_chats", chats);
+}
+
+function ensureActiveChat() {
+  let chats = getChats();
+  if (!activeChatId || !chats.some((chat) => chat.id === activeChatId)) {
+    const chat = { id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), title: "New chat", messages: [], createdAt: Date.now(), updatedAt: Date.now() };
+    chats.unshift(chat);
+    activeChatId = chat.id;
+    localStorage.setItem(`tb_active_chat_${currentAccount()}`, activeChatId);
+    saveChats(chats);
+  }
+  return getChats().find((chat) => chat.id === activeChatId);
+}
+
+function saveMessageToChat(chatId, role, text, files) {
+  if (role === "command" || !chatId) return;
+  let chats = getChats();
+  const chat = chats.find((item) => item.id === chatId);
+  if (!chat) return;
+  chat.messages.push({ role, text, files: files || [], timestamp: Date.now() });
+  if (chat.title === "New chat" && role === "user" && text) {
+    chat.title = text.slice(0, 42);
+  }
+  chat.updatedAt = Date.now();
+  saveChats(chats);
+  renderChatSidebar();
+}
+
+function saveMessageToActiveChat(role, text, files) {
+  saveMessageToChat(activeChatId, role, text, files);
+}
+
+function renderChatSidebar() {
+  if (!chatHistoryList) return;
+  const chats = getChats();
+  if (!chats.length) {
+    chatHistoryList.innerHTML = `<div class="chat-history-empty">No chats yet</div>`;
+    return;
+  }
+  chatHistoryList.innerHTML = "";
+  chats.forEach((chat) => {
+    const row = document.createElement("div");
+    row.className = "chat-history-item";
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = `chat-history-open ${chat.id === activeChatId ? "active" : ""}`;
+    open.textContent = chat.title || "New chat";
+    open.addEventListener("click", () => {
+      loadChat(chat.id);
+      if (historySidebar) historySidebar.classList.remove("open");
+    });
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "chat-history-delete";
+    del.textContent = "×";
+    del.title = "Delete chat";
+    del.addEventListener("click", (event) => {
+      event.stopPropagation();
+      deleteChat(chat.id);
+    });
+    row.append(open, del);
+    chatHistoryList.appendChild(row);
+  });
+}
+
+function loadChat(chatId) {
+  const chats = getChats();
+  const chat = chats.find((item) => item.id === chatId);
+  if (!chat) return;
+  activeChatId = chat.id;
+  localStorage.setItem(`tb_active_chat_${currentAccount()}`, activeChatId);
+  messagesEl.innerHTML = "";
+  messagesEl.appendChild(emptyState);
+  emptyState.style.display = "";
+  (chat.messages || []).forEach((message) => addMessage(message.role, message.text, message.files, { skipSave: true }));
+  renderChatSidebar();
+}
+
+function startNewChat() {
+  const chats = getChats();
+  const chat = { id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), title: "New chat", messages: [], createdAt: Date.now(), updatedAt: Date.now() };
+  chats.unshift(chat);
+  activeChatId = chat.id;
+  localStorage.setItem(`tb_active_chat_${currentAccount()}`, activeChatId);
+  saveChats(chats);
+  messagesEl.innerHTML = "";
+  messagesEl.appendChild(emptyState);
+  emptyState.style.display = "";
+  renderChatSidebar();
+}
+
+function maybeStartNewChat() {
+  const chats = getChats();
+  const activeChat = chats.find((item) => item.id === activeChatId);
+  if (!activeChat || activeChat.title !== "New chat") {
+    startNewChat();
+  }
+}
+
+function deleteChat(chatId) {
+  let chats = getChats().filter((chat) => chat.id !== chatId);
+  saveChats(chats);
+  if (activeChatId === chatId) {
+    activeChatId = chats[0]?.id || "";
+    if (activeChatId) loadChat(activeChatId);
+    else startNewChat();
+  } else {
+    renderChatSidebar();
+  }
+}
+
+function clearActiveChat() {
+  let chats = getChats();
+  const chat = chats.find((item) => item.id === activeChatId);
+  if (!chat) return;
+  chat.messages = [];
+  chat.updatedAt = Date.now();
+  saveChats(chats);
+  messagesEl.innerHTML = "";
+  messagesEl.appendChild(emptyState);
+  emptyState.style.display = "";
+  renderChatSidebar();
+}
+
 function speechCode(language) {
   const codes = {
     English: "en-US",
@@ -247,8 +389,15 @@ function hideEmptyState() {
   if (emptyState) emptyState.style.display = "none";
 }
 
-function addMessage(role, text, files) {
+function addMessage(role, text, files, options = {}) {
   hideEmptyState();
+  const saveChatId = options.chatId || activeChatId;
+  if (!options.skipSave) {
+    saveMessageToChat(saveChatId, role, text, files);
+  }
+  if (options.chatId && options.chatId !== activeChatId) {
+    return;
+  }
   const row = document.createElement("div");
   row.className = `msg-row ${role === "user" ? "user" : ""}`;
 
@@ -304,8 +453,28 @@ function speak(text) {
 }
 
 async function sendPrompt(text) {
-  if (!text.trim()) return;
-  addMessage("user", text);
+  const trimmed = text.trim();
+  if (!trimmed) return;
+  if (trimmed === "/clear") {
+    clearActiveChat();
+    promptInput.value = "";
+    autoGrow();
+    return;
+  }
+  const normalized = trimmed.toLowerCase();
+  if (normalized === "/spell" || normalized.startsWith("/spell ")) {
+    addMessage(
+      "system",
+      "Spelling pronunciation is only available through the Spell Practice button in this app. Open Spell Practice and use the Speak Word button there.",
+      null,
+      { chatId: activeChatId }
+    );
+    promptInput.value = "";
+    autoGrow();
+    return;
+  }
+  const requestChatId = activeChatId;
+  addMessage("user", text, null, { chatId: requestChatId });
   promptInput.value = "";
   autoGrow();
   sendButton.disabled = true;
@@ -324,17 +493,17 @@ async function sendPrompt(text) {
     const data = await res.json();
     removeTyping();
     if (data.error) {
-      addMessage("error", data.error);
+      addMessage("error", data.error, null, { chatId: requestChatId });
     } else {
       if (data.settings && data.settings.learningLanguage) {
         settings.learningLanguage = data.settings.learningLanguage;
         saveJSON("tb_settings", settings);
       }
-      addMessage(data.type || "assistant", data.response, data.files);
+      addMessage(data.type || "assistant", data.response, data.files, { chatId: requestChatId });
     }
   } catch (err) {
     removeTyping();
-    addMessage("error", `Connection failed: ${err.message}`);
+    addMessage("error", `Connection failed: ${err.message}`, null, { chatId: requestChatId });
   } finally {
     sendButton.disabled = false;
   }
@@ -393,11 +562,8 @@ function loadSuggestions() {
     .catch(() => {});
 }
 
-clearButton.addEventListener("click", async () => {
-  await fetch("/clear", { method: "POST" }).catch(() => {});
-  messagesEl.innerHTML = "";
-  messagesEl.appendChild(emptyState);
-  emptyState.style.display = "";
+clearButton.addEventListener("click", () => {
+  clearActiveChat();
 });
 
 uploadMenuButton.addEventListener("click", (e) => {
@@ -710,7 +876,14 @@ if (spellButton && spellModal) {
   });
 
   spellHearBtn.addEventListener("click", () => {
-    speakWord(currentSpellWord);
+    speakWord(spellInput.value.trim() || currentSpellWord);
+  });
+
+  spellInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      speakWord(spellInput.value.trim() || currentSpellWord);
+    }
   });
 
   spellCheckBtn.addEventListener("click", () => {
@@ -745,6 +918,25 @@ function loadSuggestions() {
 }
 
 updateProfileText();
-checkHealth();
+ensureActiveChat();
+loadChat(activeChatId);
+if (newChatButton) {
+  newChatButton.addEventListener("click", () => maybeStartNewChat());
+}
+if (sidebarToggleButton && historySidebar) {
+  sidebarToggleButton.addEventListener("click", (e) => {
+    e.stopPropagation();
+    historySidebar.classList.toggle("open");
+  });
+}
+if (closeSidebarButton && historySidebar) {
+  closeSidebarButton.addEventListener("click", () => historySidebar.classList.remove("open"));
+}
+document.addEventListener("click", (event) => {
+  if (historySidebar && sidebarToggleButton && !historySidebar.contains(event.target) && !sidebarToggleButton.contains(event.target)) {
+    historySidebar.classList.remove("open");
+  }
+});
+renderChatSidebar();
 initCommandButtons();
 setInterval(checkHealth, 30000);

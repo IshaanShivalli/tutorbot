@@ -1,6 +1,6 @@
 beautifulsoup4
 ddgs
-flask
+Flask
 huggingface-hub
 llama-cpp-python
 lxml
@@ -12,3 +12,4 @@ requests
 rich
 SpeechRecognition
 textual
+    

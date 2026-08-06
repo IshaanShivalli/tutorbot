@@ -321,6 +321,18 @@ def command_response(command_text: str, language: str = "English", profile: dict
             "settings": {"learningLanguage": normalized},
         }
 
+    if command_name == "/spell":
+        requested_word = argument.strip()
+        if not requested_word:
+            return {
+                "type": "assistant",
+                "response": "Usage: /spell <word> — type a word you want to hear pronounced.",
+            }
+        return {
+            "type": "assistant",
+            "response": f"Sure — I will pronounce the word for you: {requested_word}",
+        }
+
     if command_name == "/search":
         if not argument:
             return {"type": "error", "response": "Usage: /search <query>"}
@@ -328,7 +340,11 @@ def command_response(command_text: str, language: str = "English", profile: dict
         if not context:
             return {"type": "system", "response": f"No reference material found for '{argument}'."}
         preview = context[:1200] + ("..." if len(context) > 1200 else "")
-        response_text = f"Source: {source}\n\n{preview}"
+        response_text = (
+            f"Search results for '{argument}':\n"
+            f"Source: {source}\n\n"
+            f"{preview}"
+        )
         if language.lower() != "english":
             response_text = tutorbot_reply(
                 "Summarize this reference material for the student in "
@@ -337,7 +353,7 @@ def command_response(command_text: str, language: str = "English", profile: dict
                 language=language,
                 profile=profile,
             )
-        return {"type": "system", "response": response_text}
+        return {"type": "assistant", "response": response_text}
 
     if command_name == "/quiz":
         if not argument:
@@ -447,13 +463,12 @@ def process_image():
 
     image_prompt = (
         "I have processed an uploaded image using OCR and layout analysis. "
-        "Explain only what is supported by the OCR text and layout summary. "
-        "If OCR text contains a question, solve it step by step. "
-        "If OCR is weak, say what information is missing and ask for a clearer photo. "
+        "Report only what is visible in the image and what text was extracted. "
+        "Do not infer missing words, do not make assumptions about the question, "
+        "and do not solve or explain concepts unless they are clearly present in the image. "
         f"Image description:\n{image_description}\n\n"
         f"OCR text extracted from the image:\n{ocr_text}\n\n"
-        "Summarize what the image likely contains in an educational way. "
-        "Keep the response aligned with the student's grade and subject focus."
+        "Keep the response factual and aligned with the student's grade and subject focus."
     )
 
     response_text = tutorbot_reply(image_prompt, language=language, profile=profile_data)

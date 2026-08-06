@@ -268,16 +268,13 @@ function ensureActiveChat() {
   return getChats().find((chat) => chat.id === activeChatId);
 }
 
-function saveMessageToActiveChat(role, text, files) {
-  if (role === "command") return;
+function saveMessageToChat(chatId, role, text, files) {
+  if (role === "command" || !chatId) return;
   let chats = getChats();
-  let chat = chats.find((item) => item.id === activeChatId);
+  let chat = chats.find((item) => item.id === chatId);
   if (!chat) {
-    ensureActiveChat();
-    chats = getChats();
-    chat = chats.find((item) => item.id === activeChatId);
+    return;
   }
-  if (!chat) return;
   chat.messages.push({ role, text, files: files || [], timestamp: Date.now() });
   if (chat.title === "New chat" && role === "user" && text) {
     chat.title = text.slice(0, 42);
@@ -285,6 +282,10 @@ function saveMessageToActiveChat(role, text, files) {
   chat.updatedAt = Date.now();
   saveChats(chats);
   renderChatSidebar();
+}
+
+function saveMessageToActiveChat(role, text, files) {
+  saveMessageToChat(activeChatId, role, text, files);
 }
 
 function renderChatSidebar() {
@@ -427,9 +428,13 @@ function hideEmptyState() {
 
 function addMessage(role, text, files, options = {}) {
   hideEmptyState();
+  const saveChatId = options.chatId || activeChatId;
   if (!options.skipSave) {
     saveLogToHistory(role, text);
-    saveMessageToActiveChat(role, text, files);
+    saveMessageToChat(saveChatId, role, text, files);
+  }
+  if (options.chatId && options.chatId !== activeChatId) {
+    return;
   }
   const row = document.createElement("div");
   row.className = `msg-row ${role === "user" ? "user" : ""}`;
@@ -502,16 +507,22 @@ function saveLogToHistory(role, text) {
 async function sendPrompt(text) {
   if (!text.trim()) return;
   const isCommand = text.startsWith("/");
+  const requestChatId = activeChatId;
   if (isCommand && text.trim() === "/clear") {
     promptInput.value = "";
     autoGrow();
     clearActiveChat();
     return;
   }
-  if (!isCommand) {
-    addMessage("user", text);
-  } else {
+  addMessage("user", text, null, { chatId: requestChatId });
+  if (isCommand) {
     saveLogToHistory("command", text);
+    if (text.trim().toLowerCase().startsWith("/spell")) {
+      const spellWord = text.trim().slice(6).trim();
+      if (spellWord) {
+        speakWord(spellWord);
+      }
+    }
   }
   promptInput.value = "";
   autoGrow();
@@ -532,17 +543,17 @@ async function sendPrompt(text) {
     const data = await res.json();
     removeTyping();
     if (data.error) {
-      addMessage("error", data.error);
+      addMessage("error", data.error, null, { chatId: requestChatId });
     } else {
       if (data.settings && data.settings.learningLanguage) {
         settings.learningLanguage = data.settings.learningLanguage;
         saveJSON("tb_settings", settings);
       }
-      addMessage(data.type || "assistant", data.response, data.files);
+      addMessage(data.type || "assistant", data.response, data.files, { chatId: requestChatId });
     }
   } catch (err) {
     removeTyping();
-    addMessage("error", `Connection failed: ${err.message}`);
+    addMessage("error", `Connection failed: ${err.message}`, null, { chatId: requestChatId });
   } finally {
     sendButton.disabled = false;
   }
@@ -984,6 +995,13 @@ if (spellButton && spellModal) {
 
   spellHearBtn.addEventListener("click", () => {
     speakWord(spellInput.value || currentSpellWord);
+  });
+
+  spellInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      speakWord(spellInput.value || currentSpellWord);
+    }
   });
 
   spellCheckBtn.addEventListener("click", () => {
