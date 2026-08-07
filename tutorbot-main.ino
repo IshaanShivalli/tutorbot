@@ -1,19 +1,56 @@
 #include <WiFi.h>
 #include <WebServer.h>
+#include <WiFiUdp.h>
 #include <HTTPClient.h>
 #include <LittleFS.h>
-// ---- Wi-Fi credentials ----
 const char* ssid = "daf6net";
 const char* password = "NOTYOURNET";
 
-// ---- TutorBot PC server (Server.py) ----
-// Example: http://192.168.1.100:5000
-const char* pcBaseUrl = "http://192.168.1.100:5000";
+String pcBaseUrl = "http://192.168.1.100:5000";
+
+const unsigned int discoveryPort = 47823;
+const char* discoveryMagic = "TUTORBOT_DISCOVER";
+WiFiUDP discoveryUdp;
+
+bool discoverPcServer(uint32_t timeoutMs) {
+  discoveryUdp.begin(discoveryPort);
+  IPAddress broadcastIp(255, 255, 255, 255);
+  discoveryUdp.beginPacket(broadcastIp, discoveryPort);
+  discoveryUdp.write((const uint8_t*)discoveryMagic, strlen(discoveryMagic));
+  discoveryUdp.endPacket();
+
+  uint32_t start = millis();
+  while (millis() - start < timeoutMs) {
+    int packetSize = discoveryUdp.parsePacket();
+    if (packetSize > 0) {
+      char buf[128];
+      int len = discoveryUdp.read(buf, sizeof(buf) - 1);
+      if (len > 0) {
+        buf[len] = 0;
+        String msg(buf);
+        if (msg.startsWith("TUTORBOT_PC:")) {
+          String rest = msg.substring(strlen("TUTORBOT_PC:"));
+          int sep = rest.lastIndexOf(':');
+          if (sep > 0) {
+            String ip = rest.substring(0, sep);
+            String port = rest.substring(sep + 1);
+            pcBaseUrl = "http://" + ip + ":" + port;
+            Serial.print("Discovered TutorBot PC server: ");
+            Serial.println(pcBaseUrl);
+            return true;
+          }
+        }
+      }
+    }
+    delay(50);
+  }
+  return false;
+}
 
 WebServer server(80);
 
 String pcUrl(const char* path) {
-  return String(pcBaseUrl) + path;
+  return pcBaseUrl + path;
 }
 
 void sendCorsHeaders() {
@@ -125,6 +162,16 @@ void handleEsp32SettingsPost() {
   relayJsonPost("/esp32/settings", 15000);
 }
 
+// ---- /api/send-otp : relayed to PC ----
+void handleSendOtp() {
+  relayJsonPost("/api/send-otp", 20000); // sending an email can take a few seconds
+}
+
+// ---- /api/verify-otp : relayed to PC ----
+void handleVerifyOtp() {
+  relayJsonPost("/api/verify-otp", 15000);
+}
+
 // NOTE on multipart routes (/process-image, /files upload):
 // ESP32's WebServer buffers the whole multipart body into server.arg("plain"),
 // which works for small images but is memory-limited (ESP32 has ~300KB free heap).
@@ -204,8 +251,14 @@ void setup() {
   Serial.println();
   Serial.print("ESP32 relay IP: http://");
   Serial.println(WiFi.localIP());
+
+  Serial.println("Searching for TutorBot PC server on the LAN...");
+  if (!discoverPcServer(5000)) {
+    Serial.println("Discovery failed -- falling back to hardcoded pcBaseUrl.");
+  }
   Serial.print("Relaying to TutorBot PC server: ");
   Serial.println(pcBaseUrl);
+
   if (!LittleFS.begin(true)) {
     Serial.println("LittleFS Mount Failed");
     return;
@@ -232,6 +285,11 @@ void setup() {
   server.on("/esp32/settings", HTTP_GET, handleEsp32SettingsGet);
   server.on("/esp32/settings", HTTP_OPTIONS, handleOptions);
   server.on("/esp32/settings", HTTP_POST, handleEsp32SettingsPost);
+
+  server.on("/api/send-otp", HTTP_OPTIONS, handleOptions);
+  server.on("/api/send-otp", HTTP_POST, handleSendOtp);
+  server.on("/api/verify-otp", HTTP_OPTIONS, handleOptions);
+  server.on("/api/verify-otp", HTTP_POST, handleVerifyOtp);
 
   server.on("/process-image", HTTP_OPTIONS, handleOptions);
   server.on("/process-image", HTTP_POST, handleProcessImage);

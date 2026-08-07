@@ -1,12 +1,16 @@
 const authOverlay = document.getElementById("authOverlay");
 const authForm = document.getElementById("authForm");
 const authUsername = document.getElementById("authUsername");
+const authEmail = document.getElementById("authEmail");
 const authPassword = document.getElementById("authPassword");
+const authConfirmPassword = document.getElementById("authConfirmPassword");
 const authSubmitButton = document.getElementById("authSubmitButton");
 const authSubtitle = document.getElementById("authSubtitle");
 const authToggleText = document.getElementById("authToggleText");
 const authToggleButton = document.getElementById("authToggleButton");
 const passwordLabel = document.getElementById("passwordLabel");
+const confirmPasswordLabel = document.getElementById("confirmPasswordLabel");
+const emailLabel = document.getElementById("emailLabel");
 const otpLabel = document.getElementById("otpLabel");
 const authOtp = document.getElementById("authOtp");
 
@@ -19,6 +23,8 @@ const teacherPassingRate = document.getElementById("teacherPassingRate");
 
 const messagesEl = document.getElementById("messages");
 const emptyState = document.getElementById("emptyState");
+const chatHistoryList = document.getElementById("chatHistoryList");
+const newChatButton = document.getElementById("newChatButton");
 const chatForm = document.getElementById("chatForm");
 const promptInput = document.getElementById("promptInput");
 const sendButton = document.getElementById("sendButton");
@@ -46,10 +52,17 @@ const settingsButton = document.getElementById("settingsButton");
 const settingsPanel = document.getElementById("settingsPanel");
 const closeSettings = document.getElementById("closeSettings");
 const saveSettings = document.getElementById("saveSettings");
+const logoutButton = document.getElementById("logoutButton");
 const ssidInput = document.getElementById("ssidInput");
 const passwordInput = document.getElementById("passwordInput");
+const accountUsernameInput = document.getElementById("accountUsername");
+const accountEmailInput = document.getElementById("accountEmail");
+const accountCurrentPasswordInput = document.getElementById("accountCurrentPassword");
+const accountNewPasswordInput = document.getElementById("accountNewPassword");
+const accountNewPasswordConfirmInput = document.getElementById("accountNewPasswordConfirm");
 const languageSelect = document.getElementById("languageSelect");
 const learningLanguageSelect = document.getElementById("learningLanguageSelect");
+const surveyQuestionsInput = document.getElementById("surveyQuestionsInput");
 
 const changeFocusButton = document.getElementById("changeFocusButton");
 const focusModal = document.getElementById("focusModal");
@@ -62,24 +75,93 @@ const profileText = document.getElementById("profileText");
 const filesPanel = document.getElementById("filesPanel");
 const closeFiles = document.getElementById("closeFiles");
 const filesList = document.getElementById("filesList");
-const historySidebar = document.getElementById("historySidebar");
-const chatHistoryList = document.getElementById("chatHistoryList");
-const newChatButton = document.getElementById("newChatButton");
-const sidebarToggleButton = document.getElementById("sidebarToggleButton");
-const closeSidebarButton = document.getElementById("closeSidebarButton");
+
+const API_HOST = (window.location.protocol === "file:" || window.location.protocol === "null:") ? "http://127.0.0.1:5000" : window.location.origin;
 
 let ttsEnabled = false;
-let activeChatId = localStorage.getItem(`tb_active_chat_${currentAccount()}`) || "";
 let mediaStream = null;
 let profile = loadJSON("tb_profile", { grade: "Grade 9", subject: "General" });
 let settings = loadJSON("tb_settings", { language: "English", learningLanguage: "English", ssid: "", password: "", theme: "dark" });
+let surveyQuestions = [];
+let activeChatId = localStorage.getItem(`tb_active_chat_${currentAccount()}`) || "";
+
+function currentAccount() {
+  const session = localStorage.getItem("tb_session");
+  const username = (localStorage.getItem("tb_username") || "").trim().toLowerCase();
+  return session === "active" && username ? username : "guest";
+}
+
+function accountKey(key) {
+  return key.startsWith("tb_account_") ? key : `tb_account_${currentAccount()}_${key}`;
+}
+
+function setUIEnabled(enabled) {
+  const controls = [chatForm, promptInput, sendButton, newChatButton, teacherButton, settingsButton, uploadMenuButton, menuUploadImage, menuUseCamera, menuProcessImage, menuFiles];
+  controls.forEach((control) => {
+    if (!control) return;
+    control.disabled = !enabled;
+    if (enabled) {
+      control.classList.remove("disabled-input");
+    } else {
+      control.classList.add("disabled-input");
+    }
+  });
+  if (promptInput) {
+    promptInput.placeholder = enabled ? "Ask TutorBot or type /help" : "Log in to access TutorBot";
+  }
+  if (!enabled && authOverlay) {
+    authOverlay.classList.remove("hidden");
+  }
+}
+
+function getAccountEmail() {
+  return localStorage.getItem(accountKey("tb_email")) || "";
+}
+
+function setAccountEmail(email) {
+  localStorage.setItem(accountKey("tb_email"), email || "");
+}
+
+function getAccountPassword() {
+  return loadJSON(accountKey("tb_password"), "");
+}
+
+function setAccountPassword(password) {
+  saveJSON(accountKey("tb_password"), password || "");
+}
 
 function applyTheme(theme) {
+  const customControls = document.getElementById("customThemeControls");
+  document.body.removeAttribute("style");
+  document.body.classList.remove("light-theme");
+
   if (theme === "light") {
     document.body.classList.add("light-theme");
-  } else {
-    document.body.classList.remove("light-theme");
+    if (customControls) customControls.style.display = "none";
+  } else if (theme === "dark") {
+    if (customControls) customControls.style.display = "none";
+  } else if (theme === "custom") {
+    if (customControls) customControls.style.display = "block";
+    const ct = settings.customTheme || {
+      ink: "#0a0812",
+      panel: "#1c1830",
+      chalk: "#a855f7",
+      text: "#f5f2fa"
+    };
+    document.body.style.setProperty("--ink", ct.ink);
+    document.body.style.setProperty("--panel", ct.panel + "cc");
+    document.body.style.setProperty("--panel-2", ct.panel);
+    document.body.style.setProperty("--chalk", ct.chalk);
+    document.body.style.setProperty("--chalk-soft", ct.chalk + "26");
+    document.body.style.setProperty("--text", ct.text);
+    document.body.style.setProperty("--muted", ct.text + "aa");
+    
+    document.getElementById("colorInk").value = ct.ink;
+    document.getElementById("colorPanel").value = ct.panel;
+    document.getElementById("colorChalk").value = ct.chalk;
+    document.getElementById("colorText").value = ct.text;
   }
+
   const themeSelect = document.getElementById("themeSelect");
   if (themeSelect) {
     themeSelect.value = theme;
@@ -92,13 +174,19 @@ let isRegistered = false; // Toggles between login and registration mode
 // Check session
 if (localStorage.getItem("tb_session") === "active") {
   if (authOverlay) authOverlay.classList.add("hidden");
+  setUIEnabled(true);
+} else {
+  setUIEnabled(false);
 }
 
 if (authToggleButton) {
-  authToggleButton.addEventListener("click", () => {
+  authToggleButton.addEventListener("click", (e) => {
+    e.preventDefault();
     isRegistered = !isRegistered;
     otpLabel.classList.add("hidden");
     passwordLabel.classList.remove("hidden");
+    emailLabel.classList.toggle("hidden", !isRegistered);
+    confirmPasswordLabel.classList.toggle("hidden", !isRegistered);
     authOtp.removeAttribute("required");
     if (isRegistered) {
       authSubtitle.textContent = "Create an account to save your learning configurations.";
@@ -114,28 +202,59 @@ if (authToggleButton) {
   });
 }
 
+function askForDisplayNameIfMissing(username) {
+  const key = `tb_display_name_${username}`;
+  let name = localStorage.getItem(key);
+  if (!name) {
+    name = (window.prompt("What should we call you?", "") || "").trim();
+    if (name) {
+      localStorage.setItem(key, name);
+    }
+  }
+  return name;
+}
+
 if (authForm) {
   authForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     const user = authUsername.value.trim();
+    const email = authEmail.value.trim();
+    const identifier = user || email;
     const pass = authPassword.value.trim();
+    const confirmPass = authConfirmPassword.value.trim();
     
     if (otpLabel.classList.contains("hidden")) {
+      if (isRegistered && (!identifier || !email || pass !== confirmPass)) {
+        alert("Please enter a username, a valid email, and matching password confirmation.");
+        return;
+      }
+      if (!isRegistered && !identifier) {
+        alert("Please enter your username or email.");
+        return;
+      }
       authSubmitButton.disabled = true;
       authSubmitButton.textContent = "Sending Code...";
       try {
-        const res = await fetch("/api/send-otp", {
+        const res = await fetch(`${API_HOST}/api/send-otp`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: user }),
+          body: JSON.stringify({
+            username: identifier,
+            email: email,
+            password: pass,
+            confirmPassword: confirmPass,
+            mode: isRegistered ? "register" : "login",
+          }),
         });
-        const data = await res.json();
+        const data = await parseApiResponse(res);
         authSubmitButton.disabled = false;
-        if (data.ok) {
+        if (res.ok && data.ok) {
           otpLabel.classList.remove("hidden");
           passwordLabel.classList.add("hidden");
+          confirmPasswordLabel.classList.add("hidden");
+          emailLabel.classList.add("hidden");
           authOtp.setAttribute("required", "true");
-          authSubtitle.textContent = "An OTP code has been sent to your Gmail inbox.";
+          authSubtitle.textContent = "An OTP code has been sent to your email inbox.";
           authSubmitButton.textContent = "Verify & Login";
         } else {
           alert("Error: " + (data.error || "Failed to send code."));
@@ -151,18 +270,24 @@ if (authForm) {
       authSubmitButton.disabled = true;
       authSubmitButton.textContent = "Verifying...";
       try {
-        const res = await fetch("/api/verify-otp", {
+        const res = await fetch(`${API_HOST}/api/verify-otp`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: user, code: code }),
+          body: JSON.stringify({ username: user, code: code, mode: isRegistered ? "registration" : "login" }),
         });
-        const data = await res.json();
+        const data = await parseApiResponse(res);
         authSubmitButton.disabled = false;
-        if (data.ok) {
+        if (res.ok && data.ok) {
+          const sessionUser = data.user?.username || user;
           localStorage.setItem("tb_session", "active");
-          localStorage.setItem("tb_username", user);
+          localStorage.setItem("tb_username", sessionUser);
+          setAccountEmail(data.user?.email || email);
+          reloadAccountState();
+          setUIEnabled(true);
           if (authOverlay) authOverlay.classList.add("hidden");
-          addMessage("system", `Authenticated successfully via Gmail SMTP OTP as ${user}.`);
+          const displayName = askForDisplayNameIfMissing(sessionUser);
+          addMessage("system", `Hello ${displayName || sessionUser}`);
+          maybeShowSurvey();
         } else {
           alert("Error: " + (data.error || "Invalid OTP code."));
           authSubmitButton.textContent = "Verify & Login";
@@ -201,20 +326,38 @@ if (btnCreateSplitQuiz) {
 
 function loadJSON(key, fallback) {
   try {
-    const raw = localStorage.getItem(key);
+    const raw = localStorage.getItem(accountKey(key)) || localStorage.getItem(key);
     return raw ? JSON.parse(raw) : fallback;
   } catch {
     return fallback;
   }
 }
 function saveJSON(key, value) {
-  try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+  try { localStorage.setItem(accountKey(key), JSON.stringify(value)); } catch {}
 }
 
-function currentAccount() {
-  const session = localStorage.getItem("tb_session");
-  const username = (localStorage.getItem("tb_username") || "").trim().toLowerCase();
-  return session === "active" && username ? username : "guest";
+async function parseApiResponse(res) {
+  const text = await res.text();
+  const contentType = (res.headers.get("content-type") || "").toLowerCase();
+  const isJson = contentType.includes("application/json");
+
+  if (isJson) {
+    try {
+      return JSON.parse(text || "{}");
+    } catch {
+      return { error: text || `Server returned invalid JSON (${res.status})`, status: res.status };
+    }
+  }
+
+  if (!res.ok) {
+    try {
+      return JSON.parse(text || "{}");
+    } catch {
+      return { error: text || `Server returned ${res.status}`, status: res.status };
+    }
+  }
+
+  return {};
 }
 
 function getChats() {
@@ -240,8 +383,10 @@ function ensureActiveChat() {
 function saveMessageToChat(chatId, role, text, files) {
   if (role === "command" || !chatId) return;
   let chats = getChats();
-  const chat = chats.find((item) => item.id === chatId);
-  if (!chat) return;
+  let chat = chats.find((item) => item.id === chatId);
+  if (!chat) {
+    return;
+  }
   chat.messages.push({ role, text, files: files || [], timestamp: Date.now() });
   if (chat.title === "New chat" && role === "user" && text) {
     chat.title = text.slice(0, 42);
@@ -270,10 +415,7 @@ function renderChatSidebar() {
     open.type = "button";
     open.className = `chat-history-open ${chat.id === activeChatId ? "active" : ""}`;
     open.textContent = chat.title || "New chat";
-    open.addEventListener("click", () => {
-      loadChat(chat.id);
-      if (historySidebar) historySidebar.classList.remove("open");
-    });
+    open.addEventListener("click", () => loadChat(chat.id));
     const del = document.createElement("button");
     del.type = "button";
     del.className = "chat-history-delete";
@@ -334,17 +476,51 @@ function deleteChat(chatId) {
   }
 }
 
-function clearActiveChat() {
-  let chats = getChats();
-  const chat = chats.find((item) => item.id === activeChatId);
-  if (!chat) return;
-  chat.messages = [];
-  chat.updatedAt = Date.now();
-  saveChats(chats);
-  messagesEl.innerHTML = "";
-  messagesEl.appendChild(emptyState);
-  emptyState.style.display = "";
-  renderChatSidebar();
+function reloadAccountState() {
+  profile = loadJSON("tb_profile", { grade: "Grade 9", subject: "General" });
+  settings = loadJSON("tb_settings", { language: "English", learningLanguage: "English", ssid: "", password: "", theme: "dark" });
+  applyTheme(settings.theme || "dark");
+  updateProfileText();
+  checkStreak();
+}
+
+function logout() {
+  localStorage.removeItem("tb_session");
+  localStorage.removeItem("tb_username");
+  if (settingsPanel) {
+    settingsPanel.classList.add("hidden");
+    settingsPanel.setAttribute("aria-hidden", "true");
+  }
+  setUIEnabled(false);
+  reloadAccountState();
+  if (accountUsernameInput) accountUsernameInput.value = "";
+  if (accountEmailInput) accountEmailInput.value = "";
+  if (authForm) authForm.reset();
+  if (otpLabel) otpLabel.classList.add("hidden");
+  if (passwordLabel) passwordLabel.classList.remove("hidden");
+  if (authSubtitle) authSubtitle.textContent = "";
+  if (authSubmitButton) authSubmitButton.textContent = isRegistered ? "Sign Up" : "Log In";
+  if (authOverlay) authOverlay.classList.remove("hidden");
+}
+
+if (logoutButton) {
+  logoutButton.addEventListener("click", () => {
+    if (confirm("Log out of TutorBot?")) {
+      logout();
+    }
+  });
+}
+
+async function saveProfileToServer() {
+  const username = currentAccount();
+  if (!username || username === "guest" || localStorage.getItem("tb_session") !== "active") return;
+  try {
+    await fetch(`${API_HOST}/api/user-profile`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, profile }),
+    });
+  } catch {}
 }
 
 function speechCode(language) {
@@ -393,6 +569,7 @@ function addMessage(role, text, files, options = {}) {
   hideEmptyState();
   const saveChatId = options.chatId || activeChatId;
   if (!options.skipSave) {
+    saveLogToHistory(role, text);
     saveMessageToChat(saveChatId, role, text, files);
   }
   if (options.chatId && options.chatId !== activeChatId) {
@@ -449,32 +626,47 @@ function speak(text) {
   if (!("speechSynthesis" in window)) return;
   window.speechSynthesis.cancel();
   const utter = new SpeechSynthesisUtterance(text.replace(/```[\s\S]*?```/g, ""));
+  utter.rate = 0.78;
+  utter.pitch = 1;
   window.speechSynthesis.speak(utter);
 }
 
+function saveLogToHistory(role, text) {
+  try {
+    const logs = loadJSON("tb_chat_logs", []);
+    logs.push({
+      role: role,
+      text: text,
+      timestamp: new Date().toLocaleTimeString()
+    });
+    saveJSON("tb_chat_logs", logs.slice(-100));
+  } catch (e) {}
+}
+
 async function sendPrompt(text) {
-  const trimmed = text.trim();
-  if (!trimmed) return;
-  if (trimmed === "/clear") {
-    clearActiveChat();
-    promptInput.value = "";
-    autoGrow();
+  if (currentAccount() === "guest") {
+    addMessage("error", "Please log in before using TutorBot.");
     return;
   }
-  const normalized = trimmed.toLowerCase();
-  if (normalized === "/spell" || normalized.startsWith("/spell ")) {
-    addMessage(
-      "system",
-      "Spelling pronunciation is only available through the Spell Practice button in this app. Open Spell Practice and use the Speak Word button there.",
-      null,
-      { chatId: activeChatId }
-    );
-    promptInput.value = "";
-    autoGrow();
-    return;
-  }
+  if (!text.trim()) return;
+  const isCommand = text.startsWith("/");
   const requestChatId = activeChatId;
+  if (isCommand && text.trim() === "/clear") {
+    promptInput.value = "";
+    autoGrow();
+    clearActiveChat();
+    return;
+  }
   addMessage("user", text, null, { chatId: requestChatId });
+  if (isCommand) {
+    saveLogToHistory("command", text);
+    if (text.trim().toLowerCase().startsWith("/spell")) {
+      const spellWord = text.trim().slice(6).trim();
+      if (spellWord) {
+        speakWord(spellWord);
+      }
+    }
+  }
   promptInput.value = "";
   autoGrow();
   sendButton.disabled = true;
@@ -487,6 +679,7 @@ async function sendPrompt(text) {
       body: JSON.stringify({
         prompt: text,
         language: settings.learningLanguage,
+        interfaceLanguage: settings.language,
         profile: { grade: profile.grade, subject: profile.subject },
       }),
     });
@@ -560,6 +753,19 @@ function loadSuggestions() {
       suggestionsEl.classList.remove("hidden");
     })
     .catch(() => {});
+}
+
+function clearActiveChat() {
+  const chats = getChats();
+  const chat = chats.find((item) => item.id === activeChatId);
+  if (!chat) return;
+  chat.messages = [];
+  chat.updatedAt = Date.now();
+  saveChats(chats);
+  messagesEl.innerHTML = "";
+  messagesEl.appendChild(emptyState);
+  emptyState.style.display = "";
+  renderChatSidebar();
 }
 
 clearButton.addEventListener("click", () => {
@@ -723,16 +929,47 @@ ttsButton.addEventListener("click", () => {
 });
 
 settingsButton.addEventListener("click", () => {
+  if (currentAccount() === "guest") {
+    alert("Please log in before opening settings.");
+    return;
+  }
   ssidInput.value = settings.ssid || "";
   passwordInput.value = "";
+  if (accountUsernameInput) accountUsernameInput.value = currentAccount();
+  if (accountEmailInput) accountEmailInput.value = getAccountEmail();
+  if (accountCurrentPasswordInput) accountCurrentPasswordInput.value = "";
+  if (accountNewPasswordInput) accountNewPasswordInput.value = "";
+  if (accountNewPasswordConfirmInput) accountNewPasswordConfirmInput.value = "";
   languageSelect.value = settings.language;
   learningLanguageSelect.value = settings.learningLanguage;
   const themeSelect = document.getElementById("themeSelect");
-  if (themeSelect) themeSelect.value = settings.theme || "dark";
+  if (themeSelect) {
+    themeSelect.value = settings.theme || "dark";
+    document.getElementById("customThemeControls").style.display = (settings.theme === "custom") ? "block" : "none";
+  }
+  if (surveyQuestionsInput) {
+    fetch("/api/survey-questions")
+      .then((r) => r.json())
+      .then((data) => {
+        surveyQuestions = data.questions || [];
+        surveyQuestionsInput.value = surveyQuestions.map((q) => q.label || q.key).join("\n");
+      })
+      .catch(() => {
+        surveyQuestionsInput.value = "Grade level\nPreferred subject\nWeakest subject";
+      });
+  }
   settingsPanel.classList.remove("hidden");
   settingsPanel.classList.add("open");
   settingsPanel.setAttribute("aria-hidden", "false");
 });
+
+const themeSelectEl = document.getElementById("themeSelect");
+if (themeSelectEl) {
+  themeSelectEl.addEventListener("change", (e) => {
+    document.getElementById("customThemeControls").style.display = (e.target.value === "custom") ? "block" : "none";
+  });
+}
+
 closeSettings.addEventListener("click", () => {
   settingsPanel.classList.remove("open");
   settingsPanel.classList.add("hidden");
@@ -746,6 +983,14 @@ saveSettings.addEventListener("click", async () => {
   const themeSelect = document.getElementById("themeSelect");
   if (themeSelect) {
     settings.theme = themeSelect.value;
+    if (settings.theme === "custom") {
+      settings.customTheme = {
+        ink: document.getElementById("colorInk").value,
+        panel: document.getElementById("colorPanel").value,
+        chalk: document.getElementById("colorChalk").value,
+        text: document.getElementById("colorText").value
+      };
+    }
     applyTheme(settings.theme);
   }
   saveJSON("tb_settings", settings);
@@ -758,6 +1003,27 @@ saveSettings.addEventListener("click", async () => {
         body: JSON.stringify({ ssid: settings.ssid, password: settings.password }),
       });
     } catch {}
+  }
+  if (surveyQuestionsInput) {
+    const questions = surveyQuestionsInput.value
+      .split(/\r?\n/)
+      .map((line, index) => line.trim())
+      .filter(Boolean)
+      .map((label, index) => ({
+        key: index === 0 ? "grade" : index === 1 ? "subject" : index === 2 ? "weak_subject" : `question_${index + 1}`,
+        label,
+        type: index < 2 ? "select" : "text",
+      }));
+    if (questions.length) {
+      try {
+        await fetch("/api/survey-questions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ questions }),
+        });
+        surveyQuestions = questions;
+      } catch {}
+    }
   }
   settingsPanel.classList.remove("open");
   settingsPanel.classList.add("hidden");
@@ -779,6 +1045,7 @@ saveFocusButton.addEventListener("click", () => {
   profile.grade = gradeSelect.value;
   profile.subject = subjectSelect.value;
   saveJSON("tb_profile", profile);
+  saveProfileToServer();
   updateProfileText();
   focusModal.classList.add("hidden");
   focusModal.setAttribute("aria-hidden", "true");
@@ -842,10 +1109,13 @@ const spellWordLists = {
 };
 
 function speakWord(word) {
-  if (!word || !("speechSynthesis" in window)) return;
+  const spokenWord = String(word || "").trim();
+  if (!spokenWord || !("speechSynthesis" in window)) return;
   window.speechSynthesis.cancel();
-  const utter = new SpeechSynthesisUtterance(word);
+  const utter = new SpeechSynthesisUtterance(spokenWord);
   utter.lang = "en-US";
+  utter.rate = 0.65;
+  utter.pitch = 1;
   window.speechSynthesis.speak(utter);
 }
 
@@ -876,13 +1146,13 @@ if (spellButton && spellModal) {
   });
 
   spellHearBtn.addEventListener("click", () => {
-    speakWord(spellInput.value.trim() || currentSpellWord);
+    speakWord(spellInput.value || currentSpellWord);
   });
 
   spellInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter") {
       e.preventDefault();
-      speakWord(spellInput.value.trim() || currentSpellWord);
+      speakWord(spellInput.value || currentSpellWord);
     }
   });
 
@@ -905,6 +1175,14 @@ if (spellButton && spellModal) {
     }
     spellScoreEl.textContent = spellScore;
     spellStreakEl.textContent = spellStreak;
+    
+    // Save to profile
+    profile.spellScore = spellScore;
+    if (spellStreak > (profile.longestStreak || 0)) {
+      profile.longestStreak = spellStreak;
+    }
+    saveJSON("tb_profile", profile);
+    saveProfileToServer();
   });
 
   spellNextBtn.addEventListener("click", () => {
@@ -913,30 +1191,250 @@ if (spellButton && spellModal) {
   });
 }
 
+// Dictation Mode handlers
+const dictateButton = document.getElementById("dictateButton");
+const dictationModal = document.getElementById("dictationModal");
+const closeDictationModal = document.getElementById("closeDictationModal");
+const dictationHearBtn = document.getElementById("dictationHearBtn");
+const dictationInput = document.getElementById("dictationInput");
+const dictationFeedback = document.getElementById("dictationFeedback");
+const dictationStartBtn = document.getElementById("dictationStartBtn");
+const dictationNextBtn = document.getElementById("dictationNextBtn");
+const dictationTimerEl = document.getElementById("dictationTimer");
+const dictationStreakEl = document.getElementById("dictationStreak");
+
+let dictationTimer = 10;
+let dictationInterval = null;
+let dictationStreak = 0;
+let currentDictationWord = "";
+
+function startDictationTimer() {
+  clearInterval(dictationInterval);
+  dictationTimer = 10;
+  dictationTimerEl.textContent = dictationTimer + "s";
+  dictationInterval = setInterval(() => {
+    dictationTimer--;
+    dictationTimerEl.textContent = dictationTimer + "s";
+    if (dictationTimer <= 0) {
+      clearInterval(dictationInterval);
+      dictationStreak = 0;
+      dictationStreakEl.textContent = dictationStreak;
+      dictationFeedback.textContent = `✗ Time's Up! The word was "${currentDictationWord}".`;
+      dictationFeedback.className = "spell-feedback incorrect";
+      dictationStartBtn.classList.add("hidden");
+      dictationNextBtn.classList.remove("hidden");
+    }
+  }, 1000);
+}
+
+function nextDictationWord() {
+  const grade = profile.grade || "Grade 9";
+  const list = spellWordLists[grade] || spellWordLists["Grade 9"];
+  currentDictationWord = list[Math.floor(Math.random() * list.length)];
+  dictationInput.value = "";
+  dictationFeedback.textContent = "";
+  dictationFeedback.className = "spell-feedback";
+  dictationNextBtn.classList.add("hidden");
+  dictationStartBtn.classList.remove("hidden");
+  dictationStartBtn.textContent = "Check Spelling";
+  speakWord(currentDictationWord);
+  startDictationTimer();
+}
+
+if (dictateButton && dictationModal) {
+  dictateButton.addEventListener("click", () => {
+    dictationModal.classList.remove("hidden");
+    dictationModal.setAttribute("aria-hidden", "false");
+    nextDictationWord();
+  });
+  
+  closeDictationModal.addEventListener("click", () => {
+    dictationModal.classList.add("hidden");
+    dictationModal.setAttribute("aria-hidden", "true");
+    clearInterval(dictationInterval);
+    window.speechSynthesis?.cancel();
+  });
+  
+  dictationHearBtn.addEventListener("click", () => {
+    speakWord(currentDictationWord);
+  });
+  
+  dictationStartBtn.addEventListener("click", () => {
+    if (dictationStartBtn.textContent === "Start Session") {
+      nextDictationWord();
+      return;
+    }
+    const val = dictationInput.value.trim().toLowerCase();
+    if (!val) return;
+    clearInterval(dictationInterval);
+    if (val === currentDictationWord.toLowerCase()) {
+      dictationStreak++;
+      dictationFeedback.textContent = "✓ Correct spelling!";
+      dictationFeedback.className = "spell-feedback correct";
+    } else {
+      dictationStreak = 0;
+      dictationFeedback.textContent = `✗ Incorrect. It is "${currentDictationWord}".`;
+      dictationFeedback.className = "spell-feedback incorrect";
+    }
+    dictationStreakEl.textContent = dictationStreak;
+    if (dictationStreak > (profile.longestStreak || 0)) {
+      profile.longestStreak = dictationStreak;
+      saveJSON("tb_profile", profile);
+      saveProfileToServer();
+    }
+    dictationStartBtn.classList.add("hidden");
+    dictationNextBtn.classList.remove("hidden");
+  });
+  
+  dictationNextBtn.addEventListener("click", () => {
+    nextDictationWord();
+    dictationInput.focus();
+  });
+}
+
+// Survey System
+const surveyModal = document.getElementById("surveyModal");
+const submitSurvey = document.getElementById("submitSurvey");
+function maybeShowSurvey() {
+  if (surveyModal && !profile.surveyFilled) {
+    fetch("/api/survey-questions")
+      .then((r) => r.json())
+      .then((data) => {
+        const questions = data.questions || [];
+        const labels = surveyModal.querySelectorAll(".field-label");
+        questions.slice(0, 3).forEach((q, index) => {
+          const field = labels[index];
+          if (field && q.label) {
+            const control = field.querySelector("input, select");
+            field.firstChild.textContent = q.label;
+            if (control && !field.contains(control)) field.appendChild(control);
+          }
+        });
+      })
+      .catch(() => {});
+    surveyModal.classList.remove("hidden");
+    surveyModal.setAttribute("aria-hidden", "false");
+  }
+}
+if (surveyModal && submitSurvey) {
+  submitSurvey.addEventListener("click", () => {
+    profile.grade = document.getElementById("surveyGrade").value;
+    profile.subject = document.getElementById("surveySubject").value;
+    profile.weakSubject = document.getElementById("surveyWeakSubject").value || "None";
+    profile.surveyFilled = true;
+    saveJSON("tb_profile", profile);
+    surveyModal.classList.add("hidden");
+    updateProfileText();
+    addMessage("system", `Survey saved! Learning focus set to ${profile.grade} · ${profile.subject}.`);
+  });
+  
+  // Show survey if not filled
+  setTimeout(() => {
+    maybeShowSurvey();
+  }, 1000);
+}
+
+// Streak System
+function checkStreak() {
+  const today = new Date().toDateString();
+  const lastActive = profile.lastActiveDate;
+  let streak = profile.streak || 0;
+  
+  if (!lastActive) {
+    streak = 1;
+  } else {
+    const diffTime = Math.abs(new Date(today) - new Date(lastActive));
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    if (diffDays === 1) {
+      streak += 1;
+    } else if (diffDays > 1) {
+      streak = 1;
+    }
+  }
+  profile.streak = streak;
+  profile.lastActiveDate = today;
+  saveJSON("tb_profile", profile);
+  saveProfileToServer();
+  
+  const streakDisplay = document.getElementById("streakDisplay");
+  const streakVal = document.getElementById("streakVal");
+  if (streakDisplay && streakVal) {
+    streakVal.textContent = streak;
+    streakDisplay.style.display = "inline";
+  }
+}
+checkStreak();
+
+// History & Analysis modal
+const historyButton = document.getElementById("historyButton");
+const historyModal = document.getElementById("historyModal");
+const closeHistoryModal = document.getElementById("closeHistoryModal");
+const tabStatsBtn = document.getElementById("tabStatsBtn");
+const tabHistoryBtn = document.getElementById("tabHistoryBtn");
+const historyStatsTab = document.getElementById("historyStatsTab");
+const historyLogsTab = document.getElementById("historyLogsTab");
+const historyLogsList = document.getElementById("historyLogsList");
+
+if (historyButton && historyModal) {
+  historyButton.addEventListener("click", () => {
+    // Populate stats
+    document.getElementById("analysisSpellScore").textContent = profile.spellScore || 0;
+    document.getElementById("analysisStreak").textContent = profile.longestStreak || 0;
+    
+    let recommendation = "Keep studying to unlock recommendations!";
+    if (profile.weakSubject && profile.weakSubject !== "None") {
+      recommendation = `We notice you struggle with **${profile.weakSubject}**. Ask TutorBot: "Can you explain ${profile.weakSubject} with a simple example?" or type "/quiz ${profile.weakSubject}".`;
+    } else if (profile.subject) {
+      recommendation = `Focus on **${profile.subject}**! Click the Quiz button above to take a quick practice assessment.`;
+    }
+    document.getElementById("analysisRecommendation").innerHTML = renderInline(recommendation);
+    
+    // Populate chat logs
+    historyLogsList.innerHTML = "";
+    const logs = loadJSON("tb_chat_logs", []);
+    if (!logs.length) {
+      historyLogsList.innerHTML = `<li class="log-item" style="color:var(--muted); text-align:center;">No history recorded yet.</li>`;
+    } else {
+      logs.forEach(log => {
+        const li = document.createElement("li");
+        li.className = "log-item";
+        li.innerHTML = `<div class="log-time">[${log.timestamp}] ${log.role.toUpperCase()}</div><div>${escapeHTML(log.text)}</div>`;
+        historyLogsList.appendChild(li);
+      });
+    }
+    
+    historyModal.classList.remove("hidden");
+    historyModal.setAttribute("aria-hidden", "false");
+  });
+  
+  closeHistoryModal.addEventListener("click", () => {
+    historyModal.classList.add("hidden");
+    historyModal.setAttribute("aria-hidden", "true");
+  });
+  
+  tabStatsBtn.addEventListener("click", () => {
+    tabStatsBtn.classList.add("active");
+    tabHistoryBtn.classList.remove("active");
+    historyStatsTab.classList.remove("hidden");
+    historyLogsTab.classList.add("hidden");
+  });
+  
+  tabHistoryBtn.addEventListener("click", () => {
+    tabHistoryBtn.classList.add("active");
+    tabStatsBtn.classList.remove("active");
+    historyLogsTab.classList.remove("hidden");
+    historyStatsTab.classList.add("hidden");
+  });
+}
+
 function loadSuggestions() {
   // suggestions block is replaced by persistent command buttons.
 }
 
 updateProfileText();
+checkHealth();
 ensureActiveChat();
 loadChat(activeChatId);
-if (newChatButton) {
-  newChatButton.addEventListener("click", () => maybeStartNewChat());
-}
-if (sidebarToggleButton && historySidebar) {
-  sidebarToggleButton.addEventListener("click", (e) => {
-    e.stopPropagation();
-    historySidebar.classList.toggle("open");
-  });
-}
-if (closeSidebarButton && historySidebar) {
-  closeSidebarButton.addEventListener("click", () => historySidebar.classList.remove("open"));
-}
-document.addEventListener("click", (event) => {
-  if (historySidebar && sidebarToggleButton && !historySidebar.contains(event.target) && !sidebarToggleButton.contains(event.target)) {
-    historySidebar.classList.remove("open");
-  }
-});
-renderChatSidebar();
+if (newChatButton) newChatButton.addEventListener("click", maybeStartNewChat);
 initCommandButtons();
 setInterval(checkHealth, 30000);

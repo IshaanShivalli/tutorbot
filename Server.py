@@ -9,7 +9,8 @@ from PIL import Image
 from werkzeug.utils import secure_filename
 from werkzeug.serving import run_simple
 import pytesseract
-
+import socket
+import threading
 import smtplib
 from email.mime.text import MIMEText
 import random
@@ -26,6 +27,7 @@ from ui.commands import COMMANDS
 from ui import user_management, analytics, gamification
 
 verification_codes = {}
+
 
 def send_otp_email(to_email: str, otp: str):
     msg = MIMEText(f"Your TutorBot verification code is: {otp}\n\nUse this code to complete registration/login.")
@@ -65,6 +67,31 @@ last_quiz_grade = "Grade 9"
 esp32_settings = {"ssid": "", "password": ""}
 
 app = Flask(__name__, static_folder=str(WEB_DIR), static_url_path="")
+
+
+def _read_request_data() -> dict:
+    if request.is_json:
+        data = request.get_json(silent=True) or {}
+    else:
+        data = request.form.to_dict() or {}
+        if not data:
+            try:
+                payload = request.get_data(as_text=True)
+                if payload:
+                    data = json.loads(payload)
+            except (TypeError, ValueError):
+                data = {}
+    return data if isinstance(data, dict) else {}
+
+
+def _normalize_auth_mode(mode: str) -> str:
+    normalized = str(mode or "").strip().lower()
+    if normalized in {"register", "registration", "signup", "sign_up"}:
+        return "register"
+    if normalized in {"login", "signin", "sign_in"}:
+        return "login"
+    return "login"
+
 
 MODEL_INFO = {
     "Model": "Qwen2.5 0.5B Instruct",
@@ -627,37 +654,64 @@ def download_generated_file(filename):
     return send_from_directory(DOWNLOAD_DIR, filename, as_attachment=True)
 
 
-@app.post("/api/send-otp")
+@app.route("/api/send-otp", methods=["POST"])
+@app.route("/api/send-otp", methods=["GET"])
 def api_send_otp():
-    data = request.get_json(silent=True) or {}
-    email = data.get("email", "").strip()
-    if not email:
-        return jsonify({"error": "Email is required"}), 400
-    
-    otp = f"{random.randint(100000, 999999)}"
-    verification_codes[email] = otp
-    
-    if send_otp_email(email, otp):
-        return jsonify({"ok": True, "message": "OTP code sent to your email"})
+    if request.method == "GET":
+        return jsonify({"error": "Use POST to send OTP."}), 405
+
+    data = _read_request_data()
+    username = str(data.get("username") or data.get("identifier") or data.get("email") or "").strip()
+    email = str(data.get("email") or data.get("user_email") or "").strip()
+    password = str(data.get("password", ""))
+    confirm_password = str(data.get("confirmPassword") or data.get("confirm_password") or "")
+    mode = _normalize_auth_mode(data.get("mode", "login"))
+
+    if mode == "register":
+        if not username or not email or not password:
+            return jsonify({"error": "Please enter a username, email, and password"}), 400
+        if password != confirm_password:
+            return jsonify({"error": "Passwords do not match"}), 400
+        try:
+            user, verification, sent = user_management.register(username, email, password)
+        except (KeyError, ValueError) as exc:
+            return jsonify({"error": str(exc)}), 400
     else:
-        return jsonify({"error": "Failed to send email. Verify SMTP configurations."}), 500
+        if not username or not password:
+            return jsonify({"error": "Please enter your username or email and password"}), 400
+        try:
+            user, verification, sent = user_management.login(username, password)
+        except (KeyError, ValueError) as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    return jsonify({
+        "ok": True,
+        "mode": mode,
+        "message": "OTP code sent to your email" if sent else "OTP code prepared for verification",
+        "user": user,
+    })
 
 
-@app.post("/api/verify-otp")
+@app.route("/api/verify-otp", methods=["POST"])
+@app.route("/api/verify-otp", methods=["GET"])
 def api_verify_otp():
-    data = request.get_json(silent=True) or {}
-    email = data.get("email", "").strip()
-    code = data.get("code", "").strip()
-    
-    if not email or not code:
-        return jsonify({"error": "Email and code are required"}), 400
-    
-    saved_code = verification_codes.get(email)
-    if saved_code and saved_code == code:
-        verification_codes.pop(email, None)
-        return jsonify({"ok": True})
-    else:
-        return jsonify({"error": "Invalid verification code"}), 400
+    if request.method == "GET":
+        return jsonify({"error": "Use POST to verify OTP."}), 405
+
+    data = _read_request_data()
+    username = str(data.get("username") or data.get("identifier") or data.get("email") or "").strip()
+    code = str(data.get("code") or data.get("otp") or "").strip()
+    mode = _normalize_auth_mode(data.get("mode", "login"))
+
+    if not username or not code:
+        return jsonify({"error": "Username and code are required"}), 400
+
+    try:
+        user = user_management.verify(username, code, purpose=mode)
+    except (KeyError, ValueError) as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    return jsonify({"ok": True, "user": user})
 
 
 @app.get("/api/survey-questions")
@@ -689,6 +743,59 @@ def api_user_profile():
         return jsonify({"error": str(exc)}), 400
 
 
+@app.errorhandler(404)
+def handle_not_found(error):
+    path = request.path if request else "unknown"
+    if path.startswith("/api/"):
+        return jsonify({"error": f"Endpoint not found: {path}", "path": path}), 404
+    return send_from_directory(WEB_DIR, "index.html")
+
+
+
+@app.errorhandler(404)
+def handle_not_found(error):
+    path = request.path if request else "unknown"
+    if path.startswith("/api/"):
+        return jsonify({"error": f"Endpoint not found: {path}", "path": path}), 404
+    return send_from_directory(WEB_DIR, "index.html")
+
+
+# ---- LAN auto-discovery: lets the ESP32 find this PC's current IP without ----
+# ---- hardcoding it -- it broadcasts DISCOVERY_MAGIC, we reply with our IP. ----
+DISCOVERY_PORT = 47823
+DISCOVERY_MAGIC = b"TUTORBOT_DISCOVER"
+SERVER_PORT = 5000
+
+
+def get_local_ip():
+    """Best-effort LAN IP of this machine (works on Windows/macOS/Linux)."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))  # doesn't actually send anything
+        return s.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+    finally:
+        s.close()
+
+
+def discovery_responder():
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind(("", DISCOVERY_PORT))
+    print(f"Discovery responder listening on UDP {DISCOVERY_PORT}")
+    while True:
+        try:
+            data, addr = sock.recvfrom(1024)
+            if data.strip() == DISCOVERY_MAGIC:
+                reply = f"TUTORBOT_PC:{get_local_ip()}:{SERVER_PORT}".encode()
+                sock.sendto(reply, addr)
+                print(f"Discovery request from {addr} -> {reply}")
+        except OSError as exc:
+            print("Discovery responder error:", exc)
+
+
 if __name__ == "__main__":
+    threading.Thread(target=discovery_responder, daemon=True).start()
     print("TutorBot server running at http://0.0.0.0:5000/")
     run_simple("0.0.0.0", 5000, app, threaded=True, use_reloader=False)

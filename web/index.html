@@ -28,10 +28,16 @@
       
       <form id="authForm">
         <label class="field-label" id="usernameLabel">Username or Email
-          <input type="text" id="authUsername" required placeholder="Enter username/email">
+          <input type="text" id="authUsername" placeholder="Enter username/email">
+        </label>
+        <label class="field-label" id="emailLabel">Email
+          <input type="email" id="authEmail" placeholder="you@example.com">
         </label>
         <label class="field-label" id="passwordLabel">Password
-          <input type="password" id="authPassword" required placeholder="••••••••">
+          <input type="password" id="authPassword" placeholder="••••••••">
+        </label>
+        <label class="field-label hidden" id="confirmPasswordLabel">Confirm Password
+          <input type="password" id="authConfirmPassword" placeholder="Re-enter password">
         </label>
         <label class="field-label hidden" id="otpLabel">OTP Verification Code
           <input type="text" id="authOtp" placeholder="••••••" maxlength="6">
@@ -222,6 +228,21 @@
       <label class="field-label">ESP32 Wi-Fi password
         <input id="passwordInput" type="password" autocomplete="new-password" placeholder="Your Wi-Fi password">
       </label>
+      <label class="field-label">Username
+        <input id="accountUsername" type="text" readonly placeholder="Logged in username">
+      </label>
+      <label class="field-label">Email
+        <input id="accountEmail" type="email" readonly placeholder="Logged in email">
+      </label>
+      <label class="field-label">Current password
+        <input id="accountCurrentPassword" type="password" autocomplete="current-password" placeholder="Current password">
+      </label>
+      <label class="field-label">New password
+        <input id="accountNewPassword" type="password" autocomplete="new-password" placeholder="New password">
+      </label>
+      <label class="field-label">Confirm new password
+        <input id="accountNewPasswordConfirm" type="password" autocomplete="new-password" placeholder="Confirm new password">
+      </label>
       <label class="field-label">App interface language
         <select id="languageSelect">
           <option value="English">English</option>
@@ -300,6 +321,7 @@
       </label>
 
       <button id="saveSettings" class="btn-solid full" type="button" style="margin-top: 16px;">Save settings</button>
+      <button id="logoutButton" class="btn-solid full" type="button" style="margin-top: 10px; background:#ef4444; border-color:#ef4444;">Log out</button>
       <p class="modal-note">TutorBot answers, quizzes, voice recognition, and image explanations use the response language. ESP32 Wi-Fi values are stored on the PC server for setup reference.</p>
     </div>
   </aside>

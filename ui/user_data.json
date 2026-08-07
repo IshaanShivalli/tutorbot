@@ -41,9 +41,50 @@
       "lastActiveDate": "Thu Aug 06 2026",
       "weakSubject": "Algebra",
       "surveyFilled": true
+    },
+    "samanyu": {
+      "username": "samanyu",
+      "role": "student",
+      "email": "",
+      "password_hash": null,
+      "created_at": "2026-08-07T14:29:59.604157Z",
+      "last_active": "2026-08-07T15:15:42.613156Z",
+      "verified": true,
+      "grade": "Grade 9",
+      "subject": "General",
+      "streak": 1,
+      "lastActiveDate": "Fri Aug 07 2026",
+      "weakSubject": "None",
+      "surveyFilled": true
+    },
+    "guests56fa@gmail.com": {
+      "username": "guests56fa@gmail.com",
+      "role": "student",
+      "email": "guests56fa@gmail.com",
+      "password_hash": null,
+      "created_at": "2026-08-07T15:09:14.320837Z",
+      "last_active": "2026-08-07T15:21:28.990163Z",
+      "verified": true,
+      "display_name": "",
+      "grade": "Grade 9",
+      "subject": "General",
+      "streak": 1,
+      "lastActiveDate": "Fri Aug 07 2026",
+      "weakSubject": "None",
+      "surveyFilled": true
+    },
+    "isip5660": {
+      "username": "isip5660",
+      "role": "student",
+      "email": "isip5660@gmail.com",
+      "password_hash": "pbkdf2_sha256$200000$fad769fd5390321eb40980411e2b7946$a8a299ea30e98d3e186eab9524f49e8ecac367662ee17b2e9ed993acfd94fd18",
+      "created_at": "2026-08-07T18:24:59.381251Z",
+      "last_active": "2026-08-07T18:26:46.029286Z",
+      "verified": true,
+      "display_name": ""
     }
   },
-  "current_user": "ishaan",
+  "current_user": "isip5660",
   "pending_verifications": {},
   "survey_questions": [
     {

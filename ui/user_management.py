@@ -1,5 +1,7 @@
 import hashlib
+import hmac
 import json 
+import os
 import random
 import smtplib
 import ssl
@@ -13,14 +15,33 @@ from config import EMAIL_FROM, SMTP_SERVER, SMTP_PORT, SMTP_USER, SMTP_PASSWORD,
 USER_DATA_FILE = Path(__file__).resolve().parent / "user_data.json"
 DEFAULT_ADMIN_PASSWORD = "admin"
 CODE_TTL_MINUTES = 15
+MIN_PASSWORD_LENGTH = 12
 
 
 def _hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+    salt = os.urandom(16).hex()
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 200_000)
+    return f"pbkdf2_sha256$200000${salt}${digest.hex()}"
 
 
 def _verify_password(password: str, password_hash: str) -> bool:
-    return _hash_password(password) == password_hash
+    if not password_hash or not isinstance(password_hash, str):
+        return False
+    if password_hash.startswith("pbkdf2_sha256$"):
+        try:
+            prefix, iterations, salt, stored_hash = password_hash.split("$", 3)
+            if prefix != "pbkdf2_sha256" or not iterations.isdigit():
+                return False
+            digest = hashlib.pbkdf2_hmac(
+                "sha256",
+                password.encode("utf-8"),
+                salt.encode("utf-8"),
+                int(iterations),
+            )
+            return hmac.compare_digest(digest.hex(), stored_hash)
+        except ValueError:
+            return False
+    return hmac.compare_digest(hashlib.sha256(password.encode("utf-8")).hexdigest(), password_hash)
 
 
 def _default_user(username: str, role: str = "student", email: str = "", password_hash: str | None = None) -> dict[str, Any]:
@@ -32,6 +53,7 @@ def _default_user(username: str, role: str = "student", email: str = "", passwor
     "created_at": datetime.utcnow().isoformat() + "Z",
     "last_active": None,
     "verified": False,
+    "display_name": "",
     }
 
 
@@ -69,11 +91,13 @@ def _ensure_default_users(data: dict[str, Any]) -> dict[str, Any]:
     if "guest" not in users:
         users["guest"] = _default_user("guest", role="guest", email="guest@tutorbot.com")
     if "admin" not in users:
+        admin_password = os.environ.get("TUTORBOT_ADMIN_PASSWORD")
+        admin_hash = _hash_password(admin_password) if admin_password else None
         users["admin"] = _default_user(
-        "admin",
-        role="admin",
-        email="admin@tutorbot.com",
-        password_hash=_hash_password(DEFAULT_ADMIN_PASSWORD),
+            "admin",
+            role="admin",
+            email="admin@tutorbot.com",
+            password_hash=admin_hash,
         )
     return data
 
@@ -174,6 +198,19 @@ def _send_verification_code(user: dict[str, Any], purpose: str, code: str) -> bo
     return False
 
 
+def _validate_password(password: str) -> None:
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise ValueError(f"Password must be at least {MIN_PASSWORD_LENGTH} characters")
+    if not any(char.isupper() for char in password):
+        raise ValueError("Password must include at least one uppercase letter")
+    if not any(char.islower() for char in password):
+        raise ValueError("Password must include at least one lowercase letter")
+    if not any(char.isdigit() for char in password):
+        raise ValueError("Password must include at least one number")
+    if not any(char in "!@#$%^&*()-_=+[]{};:,.<>/?" for char in password):
+        raise ValueError("Password must include at least one special character")
+
+
 def _create_user_and_pending(username: str, email: str, password: str) -> tuple[dict[str, Any], dict[str, Any], bool]:
     data = _load_data()
     user = _default_user(username, role="student", email=email, password_hash=_hash_password(password))
@@ -185,19 +222,33 @@ def _create_user_and_pending(username: str, email: str, password: str) -> tuple[
     return user, verification, sent
 
 
+def _find_user_by_identifier(identifier: str) -> dict[str, Any] | None:
+    identifier = identifier.strip().lower()
+    if not identifier:
+        return None
+    data = _load_data()
+    user = data["users"].get(identifier)
+    if user:
+        return user
+    for candidate in data["users"].values():
+        if str(candidate.get("email", "")).strip().lower() == identifier:
+            return candidate
+    return None
+
+
 def login(username: str, password: str) -> tuple[dict[str, Any], dict[str, Any], bool]:
-    username = username.strip().lower()
-    if not username:
+    identifier = username.strip()
+    if not identifier:
         raise ValueError("Username cannot be empty")
     if not password:
         raise ValueError("Password cannot be empty")
     data = _load_data()
-    user = data["users"].get(username)
+    user = _find_user_by_identifier(identifier)
     if not user:
-        raise KeyError(f"User '{username}' does not exist")
+        raise KeyError(f"User '{identifier}' does not exist")
     if not user.get("password_hash") or not _verify_password(password, user["password_hash"]):
         raise ValueError("Invalid username or password")
-    verification = _create_pending_verification(username, "login")
+    verification = _create_pending_verification(user["username"], "login")
     sent = _send_verification_code(user, "login", verification["code"])
     return user, verification, sent
 
@@ -207,10 +258,11 @@ def register(username: str, email: str, password: str) -> tuple[dict[str, Any], 
     email = email.strip()
     if not username:
         raise ValueError("Username cannot be empty")
-    if not email or "@" not in email or "." not in email:
+    if email and ("@" not in email or "." not in email):
         raise ValueError("A valid email address is required")
-    if not password or len(password) < 6:
-        raise ValueError("Password must be at least 6 characters")
+    if not password:
+        raise ValueError("Password cannot be empty")
+    _validate_password(password)
     data = _load_data()
     if username in data["users"]:
         raise KeyError(f"User '{username}' already exists")
@@ -224,14 +276,18 @@ def register(username: str, email: str, password: str) -> tuple[dict[str, Any], 
 
 
 def verify(username: str, code: str, purpose: str | None = None) -> dict[str, Any]:
-    username = username.strip().lower()
+    identifier = username.strip()
     code = code.strip()
-    if not username:
+    if not identifier:
         raise ValueError("Username cannot be empty")
     if not code:
         raise ValueError("Verification code cannot be empty")
+
+    user = _find_user_by_identifier(identifier)
+    resolved_username = user["username"] if user else identifier.lower()
+
     data = _load_data()
-    pending = data["pending_verifications"].get(username)
+    pending = data["pending_verifications"].get(resolved_username)
     if not pending:
         raise KeyError("No pending verification found for that user")
     if purpose and pending["purpose"] != purpose:
@@ -240,11 +296,11 @@ def verify(username: str, code: str, purpose: str | None = None) -> dict[str, An
         raise ValueError("Invalid verification code")
     if datetime.utcnow().isoformat() + "Z" > pending["expires_at"]:
         raise ValueError("Verification code has expired")
-    _clear_pending_verification(username)
-    user = set_current_user(username)
+    _clear_pending_verification(resolved_username)
+    user = set_current_user(resolved_username)
     user["verified"] = True
     data = _load_data()
-    data["users"][username] = user
+    data["users"][resolved_username] = user
     _save_data(data)
     return user
 

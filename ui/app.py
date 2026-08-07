@@ -196,6 +196,7 @@ class TutorBotApp (App ):
         self .preferred_language ="English"
         self .interface_language ="English"
         self .current_user =user_management .get_current_user ()
+        self .awaiting_display_name =False
 
 
 
@@ -362,6 +363,17 @@ class TutorBotApp (App ):
         event .input .value =""
         self .query_one ("#suggestions",SuggestionsBox ).hide ()
 
+        if self .awaiting_display_name :
+            if message.startswith("/") :
+                self .add_message ("system","Please type the name you'd like me to call you, not a command.")
+                return 
+            display_name =message.strip ()
+            if display_name :
+                self .current_user =user_management .update_user_profile (self .current_user ['username'],display_name =display_name )
+                self .awaiting_display_name =False
+                self .add_message ("system",f"Hello {display_name}! I will call you {display_name} from now on.")
+            return 
+
         self .add_message ("user",message )
 
         if message .startswith ("/"):
@@ -505,10 +517,17 @@ class TutorBotApp (App ):
             user =user_management .verify (username ,code ,purpose )
             self .current_user =user
             self .update_status_banner ()
-            self .add_message (
-            "system",
-            f"Verified and logged in as [bold]{user['username']}[/bold] ({user['role']}).",
-            )
+            if user.get ("display_name") :
+                self .add_message (
+                "system",
+                f"Hello {user['display_name']}! Verified and logged in as [bold]{user['username']}[/bold] ({user['role']}).",
+                )
+            else :
+                self .add_message (
+                "system",
+                "What should I call you?",
+                )
+                self .awaiting_display_name =True
         except KeyError as e :
             self .add_message ("error",str (e ))
         except ValueError as e :

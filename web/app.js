@@ -1,12 +1,16 @@
 const authOverlay = document.getElementById("authOverlay");
 const authForm = document.getElementById("authForm");
 const authUsername = document.getElementById("authUsername");
+const authEmail = document.getElementById("authEmail");
 const authPassword = document.getElementById("authPassword");
+const authConfirmPassword = document.getElementById("authConfirmPassword");
 const authSubmitButton = document.getElementById("authSubmitButton");
 const authSubtitle = document.getElementById("authSubtitle");
 const authToggleText = document.getElementById("authToggleText");
 const authToggleButton = document.getElementById("authToggleButton");
 const passwordLabel = document.getElementById("passwordLabel");
+const confirmPasswordLabel = document.getElementById("confirmPasswordLabel");
+const emailLabel = document.getElementById("emailLabel");
 const otpLabel = document.getElementById("otpLabel");
 const authOtp = document.getElementById("authOtp");
 
@@ -48,8 +52,14 @@ const settingsButton = document.getElementById("settingsButton");
 const settingsPanel = document.getElementById("settingsPanel");
 const closeSettings = document.getElementById("closeSettings");
 const saveSettings = document.getElementById("saveSettings");
+const logoutButton = document.getElementById("logoutButton");
 const ssidInput = document.getElementById("ssidInput");
 const passwordInput = document.getElementById("passwordInput");
+const accountUsernameInput = document.getElementById("accountUsername");
+const accountEmailInput = document.getElementById("accountEmail");
+const accountCurrentPasswordInput = document.getElementById("accountCurrentPassword");
+const accountNewPasswordInput = document.getElementById("accountNewPassword");
+const accountNewPasswordConfirmInput = document.getElementById("accountNewPasswordConfirm");
 const languageSelect = document.getElementById("languageSelect");
 const learningLanguageSelect = document.getElementById("learningLanguageSelect");
 const surveyQuestionsInput = document.getElementById("surveyQuestionsInput");
@@ -66,6 +76,8 @@ const filesPanel = document.getElementById("filesPanel");
 const closeFiles = document.getElementById("closeFiles");
 const filesList = document.getElementById("filesList");
 
+const API_HOST = (window.location.protocol === "file:" || window.location.protocol === "null:") ? "http://127.0.0.1:5000" : window.location.origin;
+
 let ttsEnabled = false;
 let mediaStream = null;
 let profile = loadJSON("tb_profile", { grade: "Grade 9", subject: "General" });
@@ -81,6 +93,41 @@ function currentAccount() {
 
 function accountKey(key) {
   return key.startsWith("tb_account_") ? key : `tb_account_${currentAccount()}_${key}`;
+}
+
+function setUIEnabled(enabled) {
+  const controls = [chatForm, promptInput, sendButton, newChatButton, teacherButton, settingsButton, uploadMenuButton, menuUploadImage, menuUseCamera, menuProcessImage, menuFiles];
+  controls.forEach((control) => {
+    if (!control) return;
+    control.disabled = !enabled;
+    if (enabled) {
+      control.classList.remove("disabled-input");
+    } else {
+      control.classList.add("disabled-input");
+    }
+  });
+  if (promptInput) {
+    promptInput.placeholder = enabled ? "Ask TutorBot or type /help" : "Log in to access TutorBot";
+  }
+  if (!enabled && authOverlay) {
+    authOverlay.classList.remove("hidden");
+  }
+}
+
+function getAccountEmail() {
+  return localStorage.getItem(accountKey("tb_email")) || "";
+}
+
+function setAccountEmail(email) {
+  localStorage.setItem(accountKey("tb_email"), email || "");
+}
+
+function getAccountPassword() {
+  return loadJSON(accountKey("tb_password"), "");
+}
+
+function setAccountPassword(password) {
+  saveJSON(accountKey("tb_password"), password || "");
 }
 
 function applyTheme(theme) {
@@ -127,6 +174,9 @@ let isRegistered = false; // Toggles between login and registration mode
 // Check session
 if (localStorage.getItem("tb_session") === "active") {
   if (authOverlay) authOverlay.classList.add("hidden");
+  setUIEnabled(true);
+} else {
+  setUIEnabled(false);
 }
 
 if (authToggleButton) {
@@ -134,6 +184,8 @@ if (authToggleButton) {
     isRegistered = !isRegistered;
     otpLabel.classList.add("hidden");
     passwordLabel.classList.remove("hidden");
+    emailLabel.classList.toggle("hidden", !isRegistered);
+    confirmPasswordLabel.classList.toggle("hidden", !isRegistered);
     authOtp.removeAttribute("required");
     if (isRegistered) {
       authSubtitle.textContent = "Create an account to save your learning configurations.";
@@ -149,28 +201,59 @@ if (authToggleButton) {
   });
 }
 
+function askForDisplayNameIfMissing(username) {
+  const key = `tb_display_name_${username}`;
+  let name = localStorage.getItem(key);
+  if (!name) {
+    name = (window.prompt("What should we call you?", "") || "").trim();
+    if (name) {
+      localStorage.setItem(key, name);
+    }
+  }
+  return name;
+}
+
 if (authForm) {
   authForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     const user = authUsername.value.trim();
+    const email = authEmail.value.trim();
+    const identifier = user || email;
     const pass = authPassword.value.trim();
+    const confirmPass = authConfirmPassword.value.trim();
     
     if (otpLabel.classList.contains("hidden")) {
+      if (isRegistered && (!identifier || !email || pass !== confirmPass)) {
+        alert("Please enter a username, a valid email, and matching password confirmation.");
+        return;
+      }
+      if (!isRegistered && !identifier) {
+        alert("Please enter your username or email.");
+        return;
+      }
       authSubmitButton.disabled = true;
       authSubmitButton.textContent = "Sending Code...";
       try {
-        const res = await fetch("/api/send-otp", {
+        const res = await fetch(`${API_HOST}/api/send-otp`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: user }),
+          body: JSON.stringify({
+            username: identifier,
+            email: email,
+            password: pass,
+            confirmPassword: confirmPass,
+            mode: isRegistered ? "register" : "login",
+          }),
         });
-        const data = await res.json();
+        const data = await parseApiResponse(res);
         authSubmitButton.disabled = false;
-        if (data.ok) {
+        if (res.ok && data.ok) {
           otpLabel.classList.remove("hidden");
           passwordLabel.classList.add("hidden");
+          confirmPasswordLabel.classList.add("hidden");
+          emailLabel.classList.add("hidden");
           authOtp.setAttribute("required", "true");
-          authSubtitle.textContent = "An OTP code has been sent to your Gmail inbox.";
+          authSubtitle.textContent = "An OTP code has been sent to your email inbox.";
           authSubmitButton.textContent = "Verify & Login";
         } else {
           alert("Error: " + (data.error || "Failed to send code."));
@@ -186,19 +269,23 @@ if (authForm) {
       authSubmitButton.disabled = true;
       authSubmitButton.textContent = "Verifying...";
       try {
-        const res = await fetch("/api/verify-otp", {
+        const res = await fetch(`${API_HOST}/api/verify-otp`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: user, code: code }),
+          body: JSON.stringify({ username: user, code: code, mode: isRegistered ? "registration" : "login" }),
         });
-        const data = await res.json();
+        const data = await parseApiResponse(res);
         authSubmitButton.disabled = false;
-        if (data.ok) {
+        if (res.ok && data.ok) {
+          const sessionUser = data.user?.username || user;
           localStorage.setItem("tb_session", "active");
-          localStorage.setItem("tb_username", user);
+          localStorage.setItem("tb_username", sessionUser);
+          setAccountEmail(data.user?.email || email);
           reloadAccountState();
+          setUIEnabled(true);
           if (authOverlay) authOverlay.classList.add("hidden");
-          addMessage("system", `Authenticated successfully via Gmail SMTP OTP as ${user}.`);
+          const displayName = askForDisplayNameIfMissing(sessionUser);
+          addMessage("system", `Hello ${displayName || sessionUser}`);
           maybeShowSurvey();
         } else {
           alert("Error: " + (data.error || "Invalid OTP code."));
@@ -246,6 +333,30 @@ function loadJSON(key, fallback) {
 }
 function saveJSON(key, value) {
   try { localStorage.setItem(accountKey(key), JSON.stringify(value)); } catch {}
+}
+
+async function parseApiResponse(res) {
+  const text = await res.text();
+  const contentType = (res.headers.get("content-type") || "").toLowerCase();
+  const isJson = contentType.includes("application/json");
+
+  if (isJson) {
+    try {
+      return JSON.parse(text || "{}");
+    } catch {
+      return { error: text || `Server returned invalid JSON (${res.status})`, status: res.status };
+    }
+  }
+
+  if (!res.ok) {
+    try {
+      return JSON.parse(text || "{}");
+    } catch {
+      return { error: text || `Server returned ${res.status}`, status: res.status };
+    }
+  }
+
+  return {};
 }
 
 function getChats() {
@@ -372,11 +483,38 @@ function reloadAccountState() {
   checkStreak();
 }
 
+function logout() {
+  localStorage.removeItem("tb_session");
+  localStorage.removeItem("tb_username");
+  if (settingsPanel) {
+    settingsPanel.classList.add("hidden");
+    settingsPanel.setAttribute("aria-hidden", "true");
+  }
+  setUIEnabled(false);
+  reloadAccountState();
+  if (accountUsernameInput) accountUsernameInput.value = "";
+  if (accountEmailInput) accountEmailInput.value = "";
+  if (authForm) authForm.reset();
+  if (otpLabel) otpLabel.classList.add("hidden");
+  if (passwordLabel) passwordLabel.classList.remove("hidden");
+  if (authSubtitle) authSubtitle.textContent = "";
+  if (authSubmitButton) authSubmitButton.textContent = isRegistered ? "Sign Up" : "Log In";
+  if (authOverlay) authOverlay.classList.remove("hidden");
+}
+
+if (logoutButton) {
+  logoutButton.addEventListener("click", () => {
+    if (confirm("Log out of TutorBot?")) {
+      logout();
+    }
+  });
+}
+
 async function saveProfileToServer() {
   const username = currentAccount();
   if (!username || username === "guest" || localStorage.getItem("tb_session") !== "active") return;
   try {
-    await fetch("/api/user-profile", {
+    await fetch(`${API_HOST}/api/user-profile`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, profile }),
@@ -505,6 +643,10 @@ function saveLogToHistory(role, text) {
 }
 
 async function sendPrompt(text) {
+  if (currentAccount() === "guest") {
+    addMessage("error", "Please log in before using TutorBot.");
+    return;
+  }
   if (!text.trim()) return;
   const isCommand = text.startsWith("/");
   const requestChatId = activeChatId;
@@ -786,8 +928,17 @@ ttsButton.addEventListener("click", () => {
 });
 
 settingsButton.addEventListener("click", () => {
+  if (currentAccount() === "guest") {
+    alert("Please log in before opening settings.");
+    return;
+  }
   ssidInput.value = settings.ssid || "";
   passwordInput.value = "";
+  if (accountUsernameInput) accountUsernameInput.value = currentAccount();
+  if (accountEmailInput) accountEmailInput.value = getAccountEmail();
+  if (accountCurrentPasswordInput) accountCurrentPasswordInput.value = "";
+  if (accountNewPasswordInput) accountNewPasswordInput.value = "";
+  if (accountNewPasswordConfirmInput) accountNewPasswordConfirmInput.value = "";
   languageSelect.value = settings.language;
   learningLanguageSelect.value = settings.learningLanguage;
   const themeSelect = document.getElementById("themeSelect");
