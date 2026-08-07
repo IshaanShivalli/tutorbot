@@ -82,7 +82,21 @@ const filesPanel = document.getElementById("filesPanel");
 const closeFiles = document.getElementById("closeFiles");
 const filesList = document.getElementById("filesList");
 
-const API_HOST = (window.location.protocol === "file:" || window.location.protocol === "null:") ? "http://127.0.0.1:5000" : window.location.origin;
+const PUBLIC_API_HOST = (() => {
+  const config = window.__TUTORBOT_CONFIG__ || {};
+  const configuredHost = (config.apiHost || "http://tutorbot.all.edu").trim();
+  return configuredHost.replace(/\/$/, "");
+})();
+const API_HOST = (() => {
+  if (window.location.protocol === "file:" || window.location.protocol === "null:") {
+    return "http://127.0.0.1:5000";
+  }
+  const host = window.location.hostname;
+  if (host === "localhost" || host === "127.0.0.1" || host === "::1") {
+    return window.location.origin;
+  }
+  return PUBLIC_API_HOST;
+})();
 
 let ttsEnabled = false;
 let mediaStream = null;

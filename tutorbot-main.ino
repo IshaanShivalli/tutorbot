@@ -6,7 +6,9 @@
 const char* ssid = "daf6net";
 const char* password = "NOTYOURNET";
 
-String pcBaseUrl = "http://192.168.1.100:5000";
+String pcBaseUrl = "http://localhost:5000";
+const char* customPcHost = "tutorbot.all.edu";
+const uint16_t pcPort = 5000;
 
 const unsigned int discoveryPort = 47823;
 const char* discoveryMagic = "TUTORBOT_DISCOVER";
@@ -50,7 +52,29 @@ bool discoverPcServer(uint32_t timeoutMs) {
 WebServer server(80);
 
 String pcUrl(const char* path) {
-  return pcBaseUrl + path;
+  String base = pcBaseUrl;
+  if (base.endsWith("/")) {
+    base.remove(base.length() - 1);
+  }
+  return base + path;
+}
+
+bool isHttpUrl(const String& value) {
+  return value.startsWith("http://") || value.startsWith("https://");
+}
+
+void applyPcBaseUrl(const String& value) {
+  if (value.length() == 0) {
+    return;
+  }
+  if (!isHttpUrl(value)) {
+    pcBaseUrl = String("http://") + value + ":" + String(pcPort);
+  } else {
+    pcBaseUrl = value;
+  }
+  if (pcBaseUrl.endsWith("/")) {
+    pcBaseUrl.remove(pcBaseUrl.length() - 1);
+  }
 }
 
 void sendCorsHeaders() {
@@ -252,9 +276,11 @@ void setup() {
   Serial.print("ESP32 relay IP: http://");
   Serial.println(WiFi.localIP());
 
+  applyPcBaseUrl(String(customPcHost));
+
   Serial.println("Searching for TutorBot PC server on the LAN...");
   if (!discoverPcServer(5000)) {
-    Serial.println("Discovery failed -- falling back to hardcoded pcBaseUrl.");
+    Serial.println("Discovery failed -- using the configured custom host or fallback URL.");
   }
   Serial.print("Relaying to TutorBot PC server: ");
   Serial.println(pcBaseUrl);

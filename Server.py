@@ -194,7 +194,7 @@ def tutorbot_reply(prompt: str, language: str = "English", profile: dict = None,
             "Keep responses aligned with the selected subject, and explain how other topics connect if needed."
         )
     request_prompt += "\n\nAlways produce the final answer in English. Do not translate it yourself."
-    reply = ask_ai(chat_history, request_prompt, max_tokens=1024)
+    reply = ask_ai(chat_history, request_prompt, max_tokens=8192)
     chat_history.append({"role": "assistant", "content": reply})
     if len(chat_history) > MAX_HISTORY_MESSAGES:
         del chat_history[: len(chat_history) - MAX_HISTORY_MESSAGES]

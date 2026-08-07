@@ -2,11 +2,12 @@
 
 TutorBot is a local AI tutor that runs on your PC and supports a terminal interface, a mobile-friendly web UI, an ESP32 phone bridge, and an Android WebView wrapper.
 
-It uses local GGUF models and on-device OCR to answer questions, generate quizzes, export Word documents, and practice spelling with a dedicated Spell Practice mode.
+It uses local GGUF models and on-device OCR to answer questions, generate quizzes, export Word documents, practice spelling with a dedicated Spell Practice mode, and look up word meanings through a built-in Dictionary tool.
 
 ## Key Features
 
 - **AI tutoring:** Ask questions, get explanations, and follow-up guidance.
+- **Dictionary lookup:** Use the Dictionary button in the top bar to look up a word and get a short definition plus a simple example.
 - **Spelling practice:** Use the Spell Practice button in the mobile UI for pronunciation and spelling drills.
 - **Quiz generation:** Create quizzes with `/quiz` and optional web reference content.
 - **Document export:** Save quizzes as `.docx` files with answer keys.
@@ -105,7 +106,7 @@ Open the `android/` folder in Android Studio and set your TutorBot server URL in
 
 ### Mobile/web commands
 
-The mobile UI uses persistent buttons and a chat prompt for commands. The Spell Practice button is the only way to open spelling and pronunciation practice in the mobile interface.
+The mobile UI uses persistent buttons and a chat prompt for commands. The Spell Practice button opens spelling/pronunciation practice, and the Dictionary button opens a word lookup tool for quick meaning checks.
 
 | Command | Description |
 |---|---|
@@ -118,6 +119,10 @@ The mobile UI uses persistent buttons and a chat prompt for commands. The Spell 
 | `/doc answers` | Export quiz with answer key |
 | `/doc split` | Export quiz and answer key as separate files |
 
+### Dictionary feature
+
+Use the Dictionary button in the web/mobile top bar to look up a word. The app sends the word to TutorBot and returns a short meaning and one example sentence.
+
 ## Server API
 
 ### Endpoints
@@ -129,6 +134,7 @@ The mobile UI uses persistent buttons and a chat prompt for commands. The Spell 
 | `/commands` | `GET` | Get available slash commands |
 | `/ai-chat` | `POST` | Send prompts or commands |
 | `/clear` | `POST` | Clear server chat history |
+| `/dictionary` | `POST` | Look up a word and return a short meaning |
 | `/esp32/settings` | `GET/POST` | Save ESP32 network settings |
 | `/files` | `POST` | Upload a file |
 | `/files` | `GET` | List uploaded files |
@@ -166,6 +172,8 @@ Build the Android wrapper in Android Studio from the `android/` folder. Update `
 ## Notes
 
 - The mobile Spell Practice button is the supported spelling/pronunciation flow. `/spell` entry is disabled in the mobile chat prompt.
+- The Dictionary button is the supported word-meaning lookup flow in the mobile/web UI.
+- Recent auth updates also improve the mobile login and registration flow by accepting the same payload shape the web form sends.
 - Keep your local GGUF models in `models/` for offline model execution.
 - Tesseract OCR must be installed on the PC for image processing.
 

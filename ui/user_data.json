@@ -5,105 +5,38 @@
       "role": "guest",
       "email": "guest@tutorbot.com",
       "password_hash": null,
-      "created_at": "2026-08-05T14:49:56.073051Z",
+      "created_at": "2026-08-07T19:28:36.248016Z",
       "last_active": null,
-      "verified": false
+      "verified": false,
+      "display_name": ""
     },
     "admin": {
       "username": "admin",
       "role": "admin",
       "email": "admin@tutorbot.com",
-      "password_hash": "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918",
-      "created_at": "2026-08-05T14:49:56.074601Z",
-      "last_active": null,
-      "verified": false
-    },
-    "ishaan": {
-      "username": "ishaan",
-      "role": "student",
-      "email": "smilewithishaan25@gmail.com",
-      "password_hash": "eebaee0720ce9fc5736f2fd5e9a380f6476a1f7385998b58b67c240a0a9b9ec3",
-      "created_at": "2026-08-05T14:49:56.074601Z",
-      "last_active": "2026-08-05T14:50:14.526663Z",
-      "verified": true
-    },
-    "smilewithishaan25@gmail.com": {
-      "username": "smilewithishaan25@gmail.com",
-      "role": "student",
-      "email": "smilewithishaan25@gmail.com",
       "password_hash": null,
-      "created_at": "2026-08-06T15:25:47.012228Z",
-      "last_active": "2026-08-06T17:39:30.989635Z",
-      "verified": true,
-      "grade": "Grade 9",
-      "subject": "Mathematics",
-      "streak": 1,
-      "lastActiveDate": "Thu Aug 06 2026",
-      "weakSubject": "Algebra",
-      "surveyFilled": true
+      "created_at": "2026-08-07T19:28:36.248016Z",
+      "last_active": null,
+      "verified": false,
+      "display_name": ""
     },
-    "samanyu": {
-      "username": "samanyu",
+    "ishaans": {
+      "username": "ishaans",
       "role": "student",
       "email": "",
       "password_hash": null,
-      "created_at": "2026-08-07T14:29:59.604157Z",
-      "last_active": "2026-08-07T18:51:18.102184Z",
-      "verified": true,
-      "grade": "Grade 9",
-      "subject": "General",
-      "streak": 2,
-      "lastActiveDate": "Sat Aug 08 2026",
-      "weakSubject": "None",
-      "surveyFilled": true
-    },
-    "guests56fa@gmail.com": {
-      "username": "guests56fa@gmail.com",
-      "role": "student",
-      "email": "guests56fa@gmail.com",
-      "password_hash": null,
-      "created_at": "2026-08-07T15:09:14.320837Z",
-      "last_active": "2026-08-07T15:21:28.990163Z",
+      "created_at": "2026-08-07T19:28:36.248016Z",
+      "last_active": "2026-08-07T19:28:36.248016Z",
       "verified": true,
       "display_name": "",
       "grade": "Grade 9",
       "subject": "General",
       "streak": 1,
-      "lastActiveDate": "Fri Aug 07 2026",
-      "weakSubject": "None",
+      "lastActiveDate": "Sat Aug 08 2026",
+      "weakSubject": "Algebra",
       "surveyFilled": true
-    },
-    "isip5660": {
-      "username": "isip5660",
-      "role": "student",
-      "email": "isip5660@gmail.com",
-      "password_hash": "pbkdf2_sha256$200000$fad769fd5390321eb40980411e2b7946$a8a299ea30e98d3e186eab9524f49e8ecac367662ee17b2e9ed993acfd94fd18",
-      "created_at": "2026-08-07T18:24:59.381251Z",
-      "last_active": "2026-08-07T18:26:46.029286Z",
-      "verified": true,
-      "display_name": ""
     }
   },
-  "current_user": "isip5660",
-  "pending_verifications": {},
-  "survey_questions": [
-    {
-      "key": "grade",
-      "label": "Grade level",
-      "type": "select",
-      "options": []
-    },
-    {
-      "key": "subject",
-      "label": "Preferred subject",
-      "type": "select",
-      "options": []
-    },
-    {
-      "key": "weak_subject",
-      "label": "Weakest subject",
-      "type": "text",
-      "options": []
-    }
-  ]
+  "current_user": "guest",
+  "pending_verifications": {}
 }
