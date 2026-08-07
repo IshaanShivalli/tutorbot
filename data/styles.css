@@ -961,7 +961,22 @@ button:focus-visible, .ibtn:focus-visible, .pill:focus-visible, textarea:focus-v
     border-left: 0;
     border-right: 0;
   }
-  .history-sidebar { display: none; }
+  .history-sidebar {
+    display: flex;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    z-index: 90;
+    width: min(80vw, 300px);
+    padding-top: calc(16px + env(safe-area-inset-top));
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  }
+  .history-sidebar.open {
+    transform: translateX(0);
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.6);
+  }
+  .sidebar-backdrop {
+    display: block;
+  }
   .topbar { padding: 12px 16px; }
   .topbar-actions { gap: 6px; }
   .ibtn { width: 36px; height: 36px; }
@@ -973,6 +988,28 @@ button:focus-visible, .ibtn:focus-visible, .pill:focus-visible, textarea:focus-v
   }
   .bubble { max-width: 90%; font-size: 14px; }
   .auth-card { padding: 24px 18px; }
+}
+
+.sidebar-toggle {
+  display: none;
+}
+.sidebar-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 85;
+}
+.sidebar-backdrop.hidden {
+  display: none;
+}
+@media (max-width: 768px) {
+  .sidebar-toggle {
+    display: grid;
+  }
+  .sidebar-backdrop:not(.hidden) {
+    display: block;
+  }
 }
 
 /* Short / landscape viewports: compact the chrome so the message area doesn't get squeezed to nothing */

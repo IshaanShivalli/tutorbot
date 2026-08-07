@@ -25,6 +25,30 @@ const messagesEl = document.getElementById("messages");
 const emptyState = document.getElementById("emptyState");
 const chatHistoryList = document.getElementById("chatHistoryList");
 const newChatButton = document.getElementById("newChatButton");
+const historySidebar = document.getElementById("historySidebar");
+const sidebarToggleButton = document.getElementById("sidebarToggleButton");
+const sidebarBackdrop = document.getElementById("sidebarBackdrop");
+
+function openSidebar() {
+  if (historySidebar) historySidebar.classList.add("open");
+  if (sidebarBackdrop) sidebarBackdrop.classList.remove("hidden");
+}
+function closeSidebar() {
+  if (historySidebar) historySidebar.classList.remove("open");
+  if (sidebarBackdrop) sidebarBackdrop.classList.add("hidden");
+}
+if (sidebarToggleButton) {
+  sidebarToggleButton.addEventListener("click", () => {
+    if (historySidebar && historySidebar.classList.contains("open")) {
+      closeSidebar();
+    } else {
+      openSidebar();
+    }
+  });
+}
+if (sidebarBackdrop) {
+  sidebarBackdrop.addEventListener("click", closeSidebar);
+}
 const chatForm = document.getElementById("chatForm");
 const promptInput = document.getElementById("promptInput");
 const sendButton = document.getElementById("sendButton");
@@ -415,7 +439,10 @@ function renderChatSidebar() {
     open.type = "button";
     open.className = `chat-history-open ${chat.id === activeChatId ? "active" : ""}`;
     open.textContent = chat.title || "New chat";
-    open.addEventListener("click", () => loadChat(chat.id));
+    open.addEventListener("click", () => {
+      loadChat(chat.id);
+      closeSidebar();
+    });
     const del = document.createElement("button");
     del.type = "button";
     del.className = "chat-history-delete";
@@ -799,6 +826,15 @@ menuProcessImage.addEventListener("click", () => {
 menuFiles.addEventListener("click", () => openFilesPanel());
 
 menuUseCamera.addEventListener("click", async () => {
+  if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    addMessage(
+      "error",
+      "Camera access needs a secure connection (HTTPS) or 'localhost'. Since you're on " +
+      window.location.origin +
+      ", your browser is blocking camera access for security reasons. Use \"Upload image\" instead, or ask the site owner to enable HTTPS on the server."
+    );
+    return;
+  }
   try {
     mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
     cameraPreview.srcObject = mediaStream;

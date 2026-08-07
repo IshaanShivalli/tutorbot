@@ -17,6 +17,7 @@
     </div>
     <div id="chatHistoryList" class="chat-history-list"></div>
   </aside>
+  <div id="sidebarBackdrop" class="sidebar-backdrop hidden"></div>
   <div class="page">
     <aside id="authOverlay" class="auth-overlay">
     <div class="auth-card">
@@ -54,6 +55,9 @@
 
   <header class="topbar">
     <div class="brand">
+      <button id="sidebarToggleButton" class="ibtn sidebar-toggle" aria-label="Toggle chat list" title="Chats">
+        <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
       <span class="brand-mark">TB</span>
       <div class="brand-text">
         <h1>TutorBot <span id="streakDisplay" style="font-size: 14px; font-weight: 700; color: #ffb347; margin-left: 8px; display: none;">🔥 <span id="streakVal">0</span></span></h1>

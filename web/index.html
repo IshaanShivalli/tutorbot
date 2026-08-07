@@ -67,6 +67,9 @@
       <button id="dictateButton" class="ibtn" aria-label="Dictation Practice" title="Dictation Practice">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2M8 12a4 4 0 0 1 8 0"/></svg>
       </button>
+      <button id="dictionaryButton" class="ibtn" aria-label="Dictionary" title="Dictionary">
+        <svg viewBox="0 0 24 24"><path d="M6 4h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6"/><path d="M6 4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2"/><path d="M9 8h6"/><path d="M9 12h4"/></svg>
+      </button>
       <button id="voiceButton" class="ibtn" aria-label="Voice input" title="Voice input">
         <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z"/><path d="M19 11a7 7 0 0 1-14 0M12 18v3"/></svg>
       </button>
@@ -212,6 +215,21 @@
       </div>
       <ul id="filesList" class="files-list"></ul>
       <p class="modal-note">Files upload directly to the PC server. Download links open in a new tab.</p>
+    </div>
+  </aside>
+
+  <aside id="dictionaryModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2>Dictionary</h2>
+        <button id="closeDictionaryModal" class="ibtn" aria-label="Close">×</button>
+      </div>
+      <p class="modal-copy">Type a word you want to understand. TutorBot will give you a short meaning and a simple example.</p>
+      <label class="field-label">Word
+        <input id="dictionaryInput" type="text" autocomplete="off" placeholder="e.g. resilient">
+      </label>
+      <div id="dictionaryResult" class="spell-feedback" style="margin: 12px 0; min-height: 72px; white-space: pre-wrap; text-align: left;"></div>
+      <button id="lookupDictionaryButton" class="btn-solid full" type="button">Look up meaning</button>
     </div>
   </aside>
 

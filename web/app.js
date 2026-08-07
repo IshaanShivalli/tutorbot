@@ -52,6 +52,12 @@ const settingsButton = document.getElementById("settingsButton");
 const settingsPanel = document.getElementById("settingsPanel");
 const closeSettings = document.getElementById("closeSettings");
 const saveSettings = document.getElementById("saveSettings");
+const dictionaryButton = document.getElementById("dictionaryButton");
+const dictionaryModal = document.getElementById("dictionaryModal");
+const closeDictionaryModal = document.getElementById("closeDictionaryModal");
+const dictionaryInput = document.getElementById("dictionaryInput");
+const dictionaryResult = document.getElementById("dictionaryResult");
+const lookupDictionaryButton = document.getElementById("lookupDictionaryButton");
 const logoutButton = document.getElementById("logoutButton");
 const ssidInput = document.getElementById("ssidInput");
 const passwordInput = document.getElementById("passwordInput");
@@ -506,6 +512,67 @@ if (logoutButton) {
   logoutButton.addEventListener("click", () => {
     if (confirm("Log out of TutorBot?")) {
       logout();
+    }
+  });
+}
+
+async function lookupDictionaryMeaning() {
+  const word = (dictionaryInput?.value || "").trim();
+  if (!word) {
+    if (dictionaryResult) dictionaryResult.textContent = "Please enter a word to look up.";
+    return;
+  }
+  if (dictionaryResult) {
+    dictionaryResult.textContent = "Looking up meaning...";
+  }
+  try {
+    const res = await fetch("/dictionary", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        word,
+        profile: { grade: profile.grade, subject: profile.subject },
+      }),
+    });
+    const data = await res.json();
+    if (data.error) {
+      if (dictionaryResult) dictionaryResult.textContent = data.error;
+    } else if (dictionaryResult) {
+      dictionaryResult.textContent = `${word}\n\n${data.meaning}`;
+    }
+  } catch (err) {
+    if (dictionaryResult) dictionaryResult.textContent = `Could not look up the word: ${err.message}`;
+  }
+}
+
+if (dictionaryButton) {
+  dictionaryButton.addEventListener("click", () => {
+    if (dictionaryModal) {
+      dictionaryModal.classList.remove("hidden");
+      dictionaryModal.setAttribute("aria-hidden", "false");
+      setTimeout(() => dictionaryInput?.focus(), 50);
+    }
+  });
+}
+
+if (closeDictionaryModal) {
+  closeDictionaryModal.addEventListener("click", () => {
+    if (dictionaryModal) {
+      dictionaryModal.classList.add("hidden");
+      dictionaryModal.setAttribute("aria-hidden", "true");
+    }
+  });
+}
+
+if (lookupDictionaryButton) {
+  lookupDictionaryButton.addEventListener("click", lookupDictionaryMeaning);
+}
+
+if (dictionaryInput) {
+  dictionaryInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      lookupDictionaryMeaning();
     }
   });
 }

@@ -60,6 +60,7 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 DOWNLOAD_DIR.mkdir(exist_ok=True)
 
 chat_history = []
+MAX_HISTORY_MESSAGES = 12  # keep last ~6 user/assistant exchanges to stay within the model's context window
 last_quiz_content = None
 last_quiz_doc_content = None
 last_quiz_topic = "quiz"
@@ -181,6 +182,8 @@ def tutorbot_reply(prompt: str, language: str = "English", profile: dict = None,
         english_prompt = google_translate(prompt, "English", source_language=language)
 
     chat_history.append({"role": "user", "content": english_prompt})
+    if len(chat_history) > MAX_HISTORY_MESSAGES:
+        del chat_history[: len(chat_history) - MAX_HISTORY_MESSAGES]
     request_prompt = SYSTEM_PROMPT
     if profile:
         grade = str(profile.get("grade", "Grade 9") or "Grade 9")
@@ -193,6 +196,8 @@ def tutorbot_reply(prompt: str, language: str = "English", profile: dict = None,
     request_prompt += "\n\nAlways produce the final answer in English. Do not translate it yourself."
     reply = ask_ai(chat_history, request_prompt, max_tokens=1024)
     chat_history.append({"role": "assistant", "content": reply})
+    if len(chat_history) > MAX_HISTORY_MESSAGES:
+        del chat_history[: len(chat_history) - MAX_HISTORY_MESSAGES]
     if language.lower() != "english" and not force_english:
         return google_translate(reply, language, source_language="English")
     return reply
@@ -578,6 +583,24 @@ def clear_chat():
     last_quiz_content = None
     last_quiz_doc_content = None
     return jsonify({"ok": True})
+
+
+@app.post("/dictionary")
+def dictionary_lookup():
+    data = request.get_json(silent=True) or {}
+    word = str(data.get("word") or "").strip()
+    if not word:
+        return jsonify({"error": "Word is required"}), 400
+
+    prompt = (
+        f"Give a short, student-friendly definition of the word '{word}'. "
+        "Respond in 2 short paragraphs maximum: first give the meaning, then one simple example sentence."
+    )
+    try:
+        meaning = tutorbot_reply(prompt, language="English", profile=data.get("profile"))
+        return jsonify({"ok": True, "word": word, "meaning": meaning})
+    except Exception as exc:
+        return jsonify({"error": f"Dictionary lookup failed: {exc}"}), 500
 
 
 @app.get("/esp32/settings")
