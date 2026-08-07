@@ -3,8 +3,8 @@
 #include <HTTPClient.h>
 #include <LittleFS.h>
 // ---- Wi-Fi credentials ----
-const char* ssid = "Vikas's A06";
-const char* password = "Superman123!";
+const char* ssid = "daf6net";
+const char* password = "NOTYOURNET";
 
 // ---- TutorBot PC server (Server.py) ----
 // Example: http://192.168.1.100:5000
