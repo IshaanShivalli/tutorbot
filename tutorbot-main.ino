@@ -3,6 +3,7 @@
 #include <WiFiUdp.h>
 #include <HTTPClient.h>
 #include <LittleFS.h>
+#include <ESPmDNS.h>
 const char* ssid = "daf6net";
 const char* password = "NOTYOURNET";
 
@@ -276,6 +277,15 @@ void setup() {
   Serial.print("ESP32 relay IP: http://");
   Serial.println(WiFi.localIP());
 
+  // Setup mDNS for local domain name
+  if (!MDNS.begin("tutorbot.edu")) {
+    Serial.println("Error setting up mDNS");
+  } else {
+    Serial.println("mDNS responder started");
+    Serial.println("Access ESP32 at: http://tutorbot.edu.local/");
+    MDNS.addService("http", "tcp", 80);
+  }
+
   applyPcBaseUrl(String(customPcHost));
 
   Serial.println("Searching for TutorBot PC server on the LAN...");
@@ -292,11 +302,15 @@ void setup() {
   Serial.println(LittleFS.exists("/index.html"));
   Serial.println(LittleFS.exists("/app.js"));
   Serial.println(LittleFS.exists("/styles.css"));
+  Serial.println(LittleFS.exists("/api-config.ts"));
+  Serial.println(LittleFS.exists("/api-config.js"));
 
   server.on("/", HTTP_GET, handleRoot);
 
   server.serveStatic("/app.js", LittleFS, "/app.js");
   server.serveStatic("/styles.css", LittleFS, "/styles.css");
+  server.serveStatic("/api-config.ts", LittleFS, "/api-config.ts");
+  server.serveStatic("/api-config.js", LittleFS, "/api-config.js");
 
   server.on("/health", HTTP_GET, handleHealth);
 
