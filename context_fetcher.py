@@ -41,6 +41,8 @@ def fetch_page_text(url, max_chars=5000, timeout=10):
 
         response.raise_for_status()
 
+        response.encoding = response.apparent_encoding
+
         soup = BeautifulSoup(
             response.text,
             "html.parser"
@@ -152,6 +154,10 @@ def get_context_for_topic(topic, max_chars=3000):
 
             if last_period > max_chars * 0.6:
                 trimmed = trimmed[:last_period + 1]
+            else:
+                last_space = trimmed.rfind(" ")
+                if last_space > 0:
+                    trimmed = trimmed[:last_space].rstrip() + "..."
 
             return trimmed, title
 
