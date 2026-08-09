@@ -7,97 +7,127 @@
 // in the including .ino before this header is used.
 extern TFT_eSPI tft;
 
-// ========== Desktop-Buddy Style Face ==========
+// ========== Smart-Display Style Face ==========
+// Tuned for a 240 (width) x 320 (height) portrait display.
+// Style: WiFi icon top-left, blocky twin-bar mouth, minimal.
 
-#define FACE_CX 120
-#define FACE_CY 160
-#define EYE_Y   135
-#define EYE_DX  35
-#define EYE_R   14
+#define SCREEN_W 240
+#define SCREEN_H 320
 
-inline void drawFaceBase(const char* label) {
+#define FACE_CX (SCREEN_W / 2)
+#define FACE_CY (SCREEN_H / 2)
+
+#define MOUTH_BAR_W   26
+#define MOUTH_BAR_GAP 14
+#define MOUTH_COLOR   TFT_CYAN
+
+// ---------- Status bar (WiFi icon) ----------
+
+inline void drawWifiIcon(int x, int y, bool connected) {
+  uint16_t col = connected ? TFT_WHITE : TFT_RED;
+  for (int r = 4; r <= 12; r += 4) {
+    for (int a = 200; a <= 340; a += 10) {
+      float rad = a * 3.14159f / 180.0f;
+      int px = x + r * cos(rad);
+      int py = y + r * sin(rad);
+      tft.drawPixel(px, py, col);
+    }
+  }
+  tft.fillCircle(x, y + 2, 2, col);
+}
+
+inline void drawStatusBar(bool wifiConnected) {
+  tft.fillRect(0, 0, SCREEN_W, 30, TFT_BLACK);
+  drawWifiIcon(20, 18, wifiConnected);
+}
+
+// ---------- Base face draw ----------
+
+inline void drawFaceBase(const char* label, bool wifiConnected = true) {
   tft.fillScreen(TFT_BLACK);
+  drawStatusBar(wifiConnected);
+
   tft.setTextColor(TFT_WHITE);
   tft.setTextSize(2);
   tft.setTextDatum(TC_DATUM);
-  tft.drawString(label, 120, 10);
+  tft.drawString(label, SCREEN_W / 2, 8);
   tft.setTextDatum(TL_DATUM);
 }
 
-inline void drawEyesOpen(int offsetY = 0) {
-  tft.fillCircle(FACE_CX - EYE_DX, EYE_Y + offsetY, EYE_R, TFT_CYAN);
-  tft.fillCircle(FACE_CX + EYE_DX, EYE_Y + offsetY, EYE_R, TFT_CYAN);
-  tft.fillCircle(FACE_CX - EYE_DX, EYE_Y + offsetY, EYE_R * 0.4, TFT_BLACK);
-  tft.fillCircle(FACE_CX + EYE_DX, EYE_Y + offsetY, EYE_R * 0.4, TFT_BLACK);
+// ---------- Blocky mouth (two rounded bars, like the reference image) ----------
+
+inline void drawMouthBars(int leftH, int rightH) {
+  int barY = FACE_CY - 30;
+  int leftX  = FACE_CX - MOUTH_BAR_GAP - MOUTH_BAR_W;
+  int rightX = FACE_CX + MOUTH_BAR_GAP;
+
+  tft.fillRect(0, barY - 40, SCREEN_W, 100, TFT_BLACK);
+
+  int ly = barY + (60 - leftH) / 2;
+  int ry = barY + (60 - rightH) / 2;
+
+  tft.fillRoundRect(leftX,  ly, MOUTH_BAR_W, leftH,  8, MOUTH_COLOR);
+  tft.fillRoundRect(rightX, ry, MOUTH_BAR_W, rightH, 8, MOUTH_COLOR);
 }
 
-inline void drawEyesClosed(int offsetY = 0) {
-  tft.drawFastHLine(FACE_CX - EYE_DX - EYE_R, EYE_Y + offsetY, EYE_R * 2, TFT_CYAN);
-  tft.drawFastHLine(FACE_CX + EYE_DX - EYE_R, EYE_Y + offsetY, EYE_R * 2, TFT_CYAN);
-}
+// ---------- Expression states ----------
 
-inline void blink() {
-  drawEyesClosed();
-  delay(120);
-  drawEyesOpen();
+inline void drawMouthNeutral() {
+  drawFaceBase("Ready");
+  drawMouthBars(60, 60);
+  Serial.println("Display: Neutral");
 }
 
 inline void drawMouthHappy() {
   drawFaceBase("TutorBot");
-  drawEyesOpen();
-  // Wide smiling arc
-  for (int x = -35; x <= 35; x++) {
-    int y = 200 + (x * x) / 60;
-    tft.fillCircle(FACE_CX + x, y, 3, TFT_CYAN);
-  }
-  Serial.println("Display: Happy Mouth");
+  drawMouthBars(40, 40);
+  Serial.println("Display: Happy");
 }
 
 inline void drawMouthThinking() {
   drawFaceBase("Thinking...");
-  drawEyesOpen(-4);
-  tft.drawFastHLine(FACE_CX - 20, 205, 40, TFT_CYAN);
-  // Thought dots
-  tft.fillCircle(190, 60, 4, TFT_YELLOW);
-  tft.fillCircle(205, 45, 6, TFT_YELLOW);
-  tft.fillCircle(222, 28, 8, TFT_YELLOW);
-  Serial.println("Display: Thinking Mouth");
+  drawMouthBars(20, 20);
+  tft.fillCircle(SCREEN_W - 50, 60, 4, TFT_YELLOW);
+  tft.fillCircle(SCREEN_W - 35, 45, 6, TFT_YELLOW);
+  tft.fillCircle(SCREEN_W - 18, 28, 8, TFT_YELLOW);
+  Serial.println("Display: Thinking");
 }
 
 inline void drawMouthSad() {
   drawFaceBase("Error");
-  drawEyesOpen();
-  // Downward frown arc
-  for (int x = -30; x <= 30; x++) {
-    int y = 215 - (x * x) / 70;
-    tft.fillCircle(FACE_CX + x, y, 3, TFT_RED);
-  }
-  Serial.println("Display: Sad Mouth");
-}
-
-inline void drawMouthNeutral() {
-  drawFaceBase("Ready");
-  drawEyesOpen();
-  tft.drawFastHLine(FACE_CX - 25, 202, 50, TFT_CYAN);
-  Serial.println("Display: Neutral Mouth");
+  drawMouthBars(15, 15);
+  tft.fillRect(0, FACE_CY - 30, SCREEN_W, 60, TFT_BLACK);
+  tft.drawFastHLine(FACE_CX - 40, FACE_CY, 80, TFT_RED);
+  Serial.println("Display: Sad");
 }
 
 inline void drawMouthListening() {
   drawFaceBase("Listening...");
-  drawEyesOpen();
-  tft.fillCircle(FACE_CX, 205, 10, TFT_CYAN);
-  tft.fillCircle(FACE_CX, 205, 5, TFT_BLACK);
-  Serial.println("Display: Listening Mouth");
+  drawMouthBars(50, 50);
+  Serial.println("Display: Listening");
 }
 
 inline void drawMouthSpeaking() {
-  drawFaceBase("Speaking...");
-  drawEyesOpen();
-  static bool open = false;
-  open = !open;
-  int h = open ? 20 : 8;
-  tft.fillRoundRect(FACE_CX - 22, 200 - h / 2, 44, h, 6, TFT_CYAN);
-  Serial.println("Display: Speaking Mouth");
+  drawFaceBase("Speaking...", true);
+  int leftH  = 20 + random(0, 45);
+  int rightH = 20 + random(0, 45);
+  drawMouthBars(leftH, rightH);
+  Serial.println("Display: Speaking (animated)");
+}
+
+inline void blink() {
+  drawMouthBars(58, 58);
+  delay(80);
+  drawMouthBars(60, 60);
+}
+
+inline void drawClock(const char* hhmm) {
+  tft.fillRect(SCREEN_W / 2 - 40, 4, 80, 20, TFT_BLACK);
+  tft.setTextColor(TFT_YELLOW);
+  tft.setTextSize(2);
+  tft.setTextDatum(TC_DATUM);
+  tft.drawString(hhmm, SCREEN_W / 2, 8);
+  tft.setTextDatum(TL_DATUM);
 }
 
 #endif // FACE_H

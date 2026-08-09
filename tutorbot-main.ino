@@ -25,7 +25,7 @@ DHT dht(DHTPIN, DHTTYPE);
 // Temperature threshold (Celsius)
 #define TEMP_THRESHOLD 40.0
 bool serverDisabledDueToHeat = false;
-const char* ssid = "Redmi Note 13 Pro 5G";
+const char* ssid = "Readme Note 13 Pro 5G";
 const char* password = "rossi_46";
 
 // Server connection status
@@ -266,7 +266,15 @@ void handleHealth() {
 }
 
 void handleAiChat() {
+  drawMouthListening();
+  drawMouthThinking();
   relayJsonPost("/ai-chat", 120000);
+  // Animate a brief "speaking" flourish once the reply is ready
+  for (int i = 0; i < 6; i++) {
+    drawMouthSpeaking();
+    delay(180);
+  }
+  drawMouthNeutral();
 }
 
 void handleClear() {
