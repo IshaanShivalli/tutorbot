@@ -69,7 +69,10 @@ body.light-theme .bubble,
 body.light-theme .suggestion,
 body.light-theme .btn-solid,
 body.light-theme .btn-ghost,
-body.light-theme .pill {
+body.light-theme .pill,
+body.light-theme .empty-state,
+body.light-theme .suggestions,
+body.light-theme .bubble.system {
   background: rgba(255, 255, 255, 0.92);
 }
 
@@ -128,6 +131,7 @@ body::before {
   background: radial-gradient(circle, rgba(124, 58, 237, 0.12) 0%, transparent 70%);
   z-index: 0;
   pointer-events: none;
+  animation: driftGlowA 22s ease-in-out infinite;
 }
 
 body::after {
@@ -140,6 +144,24 @@ body::after {
   background: radial-gradient(circle, rgba(236, 72, 153, 0.08) 0%, transparent 70%);
   z-index: 0;
   pointer-events: none;
+  animation: driftGlowB 26s ease-in-out infinite;
+}
+
+@keyframes driftGlowA {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(3vw, 4vh) scale(1.08); }
+}
+@keyframes driftGlowB {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-3vw, -3vh) scale(1.1); }
+}
+
+body {
+  animation: appFadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes appFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 h1, h2 {
@@ -331,7 +353,17 @@ button, input, textarea, select {
   display: grid;
   place-items: center;
   cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1), transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.ibtn:hover {
+  transform: translateY(-1px) scale(1.05);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  border-color: var(--chalk);
+  background: rgba(168, 85, 247, 0.1);
+}
+.ibtn:active {
+  transform: scale(0.94);
+  transition-duration: 0.08s;
 }
 .ibtn svg {
   width: 18px;
@@ -341,15 +373,10 @@ button, input, textarea, select {
   stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
-  transition: stroke 0.2s ease;
+  transition: stroke 0.2s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
-.ibtn:hover {
-  border-color: var(--chalk);
-  background: rgba(168, 85, 247, 0.1);
-  transform: translateY(-1px);
-}
-.ibtn:active {
-  transform: translateY(1px);
+.ibtn:hover svg {
+  transform: scale(1.08);
 }
 .ibtn.active {
   background: var(--chalk-soft);
@@ -399,7 +426,7 @@ button, input, textarea, select {
 .focus-value {
   font-size: 14px;
   font-weight: 600;
-  color: #fff;
+  color: var(--text);
 }
 
 .pill {
@@ -414,7 +441,7 @@ button, input, textarea, select {
 }
 .pill:hover {
   border-color: var(--chalk);
-  color: #fff;
+  color: var(--text);
   background: rgba(168, 85, 247, 0.1);
 }
 
@@ -486,17 +513,17 @@ button, input, textarea, select {
   border-radius: 6px;
   padding: 3px 7px;
   font-family: "IBM Plex Mono", monospace;
-  color: #fff;
+  color: var(--text);
 }
 
 .msg-row {
   display: flex;
   width: 100%;
-  animation: slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: slideIn 0.36s cubic-bezier(0.16, 1, 0.3, 1);
 }
 @keyframes slideIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(14px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 .msg-row.user {
   justify-content: flex-end;
@@ -628,7 +655,7 @@ button, input, textarea, select {
 }
 .suggestion:hover {
   border-color: var(--chalk);
-  color: #fff;
+  color: var(--text);
   background: rgba(168, 85, 247, 0.1);
   transform: translateY(-1px);
 }
@@ -709,9 +736,51 @@ button, input, textarea, select {
   transform: scale(1.04);
   box-shadow: 0 6px 16px rgba(168, 85, 247, 0.45);
 }
+.send:active {
+  transform: scale(0.92);
+}
+.send.sent-pulse {
+  animation: sentPulse 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes sentPulse {
+  0% { transform: scale(1); }
+  40% { transform: scale(0.85) rotate(-8deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
 .send:disabled {
   opacity: 0.5;
   cursor: wait;
+}
+
+.send.stop {
+  background: linear-gradient(135deg, #ef4444 0%, #f97316 100%);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.35);
+  animation: stopPulse 1.6s ease-in-out infinite;
+}
+.send.stop:hover {
+  box-shadow: 0 6px 16px rgba(239, 68, 68, 0.5);
+}
+.send.stop.hidden {
+  display: none;
+}
+@keyframes stopPulse {
+  0%, 100% { box-shadow: 0 4px 12px rgba(239, 68, 68, 0.35); }
+  50% { box-shadow: 0 4px 20px rgba(239, 68, 68, 0.6); }
+}
+
+.bubble.streaming::after {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 16px;
+  margin-left: 2px;
+  background: var(--chalk);
+  vertical-align: text-bottom;
+  animation: cursorBlink 0.9s steps(1) infinite;
+}
+@keyframes cursorBlink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
 }
 
 .upload-menu {
@@ -746,7 +815,7 @@ button, input, textarea, select {
 }
 .menu-item:hover {
   background: var(--chalk-soft);
-  color: #fff;
+  color: var(--text);
 }
 
 .camera-panel {
@@ -803,29 +872,54 @@ button, input, textarea, select {
   position: fixed;
   inset: 0;
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
+  background: rgba(7, 5, 15, 0);
+  backdrop-filter: blur(0px);
+  padding: 0;
+  z-index: 40;
+  pointer-events: none;
+  transition: background 0.28s cubic-bezier(0.4, 0, 0.2, 1), backdrop-filter 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.modal:not(.hidden) {
   background: rgba(7, 5, 15, 0.8);
   backdrop-filter: blur(10px);
-  padding: 20px;
-  z-index: 40;
+  pointer-events: auto;
 }
-.modal.hidden { display: none; }
+.modal.hidden .modal-card {
+  opacity: 0;
+  transform: translateY(100%);
+}
+.modal.hidden {
+  transition: background 0.2s ease, backdrop-filter 0.2s ease, visibility 0s linear 0.2s;
+  visibility: hidden;
+}
 .modal-card {
-  width: min(100%, 460px);
-  max-height: 85vh;
-  max-height: 85dvh;
+  width: 100%;
+  max-width: 100%;
+  max-height: 88vh;
+  max-height: 88dvh;
   overflow-y: auto;
-  background: #130f24;
-  border: 1px solid var(--line);
-  border-radius: 24px;
-  padding: 24px;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
-  animation: modalIn 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  background: rgba(19, 15, 36, 0.92);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 0;
+  border-radius: 24px 24px 0 0;
+  padding: 20px 20px calc(24px + env(safe-area-inset-bottom));
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.6);
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.32s cubic-bezier(0.16, 1, 0.3, 1), transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
 }
-@keyframes modalIn {
-  from { opacity: 0; transform: scale(0.95); }
-  to { opacity: 1; transform: scale(1); }
+.modal-card::before {
+  content: "";
+  display: block;
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.2);
+  margin: 0 auto 16px;
 }
 .modal-head {
   display: flex;
@@ -842,6 +936,19 @@ button, input, textarea, select {
   font-size: 14.5px;
   line-height: 1.6;
   margin-bottom: 20px;
+}
+.reader-mode-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.reader-mode-choice label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  cursor: pointer;
 }
 .modal-note {
   color: var(--muted);
@@ -947,8 +1054,16 @@ button:focus-visible, .ibtn:focus-visible, .pill:focus-visible, textarea:focus-v
 
 @media (prefers-reduced-motion: reduce) {
   .typing span, .msg-row { animation: none; }
+  body::before, body::after { animation: none; }
+  body { animation: none; }
+  .ibtn, .ibtn svg, .send, .modal-card { transition: none; }
+  .send.sent-pulse, .send.stop { animation: none; }
+  .bubble.streaming::after { animation: none; opacity: 1; }
 }
 
+/* Shared ruleset for web/ (desktop) and data/ (ESP32 mobile UI): compact
+   chrome only kicks in below 768px, so web/ gets a real desktop layout and
+   data/ -- which is always narrow -- naturally always gets the compact one. */
 @media (max-width: 768px) {
   .page {
     position: fixed;
@@ -964,7 +1079,7 @@ button:focus-visible, .ibtn:focus-visible, .pill:focus-visible, textarea:focus-v
   .history-sidebar {
     display: flex;
     transform: translateX(-100%);
-    transition: transform 0.25s ease;
+    transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
     z-index: 90;
     width: min(80vw, 300px);
     padding-top: calc(16px + env(safe-area-inset-top));
@@ -979,15 +1094,21 @@ button:focus-visible, .ibtn:focus-visible, .pill:focus-visible, textarea:focus-v
   }
   .topbar { padding: 12px 16px; }
   .topbar-actions { gap: 6px; }
-  .ibtn { width: 36px; height: 36px; }
+  .ibtn { width: 42px; height: 42px; }
   .brand-text h1 { font-size: 18px; }
   .focus-strip { padding: 10px 16px; }
   .messages { padding: 16px 16px; }
   .composer {
     padding: 12px 14px calc(14px + env(safe-area-inset-bottom));
   }
-  .bubble { max-width: 90%; font-size: 14px; }
+  .bubble { max-width: 92%; font-size: 15px; }
   .auth-card { padding: 24px 18px; }
+  .send { width: 48px; height: 48px; }
+  /* Prevent iOS/embedded-WebView auto-zoom on focus (kicks in under 16px) --
+     matters most on the ESP32 touchscreen, where this UI is always shown at
+     this breakpoint. */
+  input, select, textarea { font-size: 16px; }
+  #promptInput { font-size: 16px; }
 }
 
 .sidebar-toggle {
@@ -1078,7 +1199,7 @@ button:focus-visible, .ibtn:focus-visible, .pill:focus-visible, textarea:focus-v
 .auth-brand h2 {
   font-size: 22px;
   font-weight: 700;
-  color: #fff;
+  color: var(--text);
 }
 .auth-subtitle {
   font-size: 14px;
@@ -1102,7 +1223,7 @@ button:focus-visible, .ibtn:focus-visible, .pill:focus-visible, textarea:focus-v
   text-decoration: underline;
 }
 .auth-toggle button:hover {
-  color: #fff;
+  color: var(--text);
 }
 
 /* Command Buttons Row */

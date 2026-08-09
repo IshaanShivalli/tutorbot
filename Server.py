@@ -27,6 +27,19 @@ from quiz_generator import generate_quiz, reformat_quiz_for_doc
 from ui.commands import COMMANDS
 from ui import user_management, analytics, gamification
 
+# ---- Reader Mode: optional doc-parsing libraries, imported lazily/safely ----
+try:
+    import pdfplumber
+    HAVE_PDFPLUMBER = True
+except ImportError:
+    HAVE_PDFPLUMBER = False
+
+try:
+    import docx as python_docx  # python-docx package
+    HAVE_DOCX = True
+except ImportError:
+    HAVE_DOCX = False
+
 verification_codes = {}
 
 
@@ -62,6 +75,34 @@ DOWNLOAD_DIR.mkdir(exist_ok=True)
 
 chat_history = []
 MAX_HISTORY_MESSAGES = 12  # keep last ~6 user/assistant exchanges to stay within the model's context window
+
+# Message-count alone doesn't protect against a single huge message (e.g. a
+# reader-mode doc dump can be ~12,000 chars / ~3000 tokens). If that sits in
+# history for a few turns, prompt + max_tokens can exceed the model's n_ctx
+# and llama.cpp aborts the whole process with a native GGML_ASSERT -- not a
+# Python exception, so no try/except can catch it. These are conservative
+# safety limits (roughly 4 chars/token) applied on every call so the request
+# sent to the model can never exceed a safe context budget.
+SAFE_CONTEXT_TOKENS = 3800          # assume a conservative n_ctx; trim to fit under it
+CHARS_PER_TOKEN_ESTIMATE = 4
+
+
+def _estimate_tokens(text: str) -> int:
+    return max(1, len(text) // CHARS_PER_TOKEN_ESTIMATE)
+
+
+def _trim_history_to_budget(history: list, reserved_tokens: int) -> list:
+    """Drop oldest messages until the remaining history fits the token budget
+    left over after reserving space for the system prompt and the reply."""
+    budget = max(200, SAFE_CONTEXT_TOKENS - reserved_tokens)
+    trimmed = list(history)
+    while trimmed:
+        total = sum(_estimate_tokens(m.get("content", "")) for m in trimmed)
+        if total <= budget:
+            break
+        trimmed.pop(0)  # drop oldest first
+    return trimmed
+
 last_quiz_content = None
 last_quiz_doc_content = None
 last_quiz_topic = "quiz"
@@ -177,7 +218,7 @@ def google_translate(text: str, target_language: str, source_language: str = "au
         return text
 
 
-def tutorbot_reply(prompt: str, language: str = "English", profile: dict = None, force_english: bool = False) -> str:
+def tutorbot_reply(prompt: str, language: str = "English", profile: dict = None, force_english: bool = False, max_tokens: int = 8192) -> str:
     language = normalize_language(language)
     english_prompt = prompt
     if language.lower() != "english":
@@ -196,7 +237,17 @@ def tutorbot_reply(prompt: str, language: str = "English", profile: dict = None,
             "Keep responses aligned with the selected subject, and explain how other topics connect if needed."
         )
     request_prompt += "\n\nAlways produce the final answer in English. Do not translate it yourself."
-    reply = ask_ai(chat_history, request_prompt, max_tokens=8192)
+
+    # Clamp the reply budget, then trim history so (system + history + reply)
+    # can't exceed the safe context budget -- this is what actually prevents
+    # the native crash, not a try/except.
+    system_tokens = _estimate_tokens(request_prompt)
+    max_tokens = max(64, min(max_tokens, SAFE_CONTEXT_TOKENS - system_tokens - 200))
+    trimmed_history = _trim_history_to_budget(chat_history, reserved_tokens=system_tokens + max_tokens)
+    if len(trimmed_history) < len(chat_history):
+        del chat_history[: len(chat_history) - len(trimmed_history)]
+
+    reply = ask_ai(chat_history, request_prompt, max_tokens=max_tokens)
     chat_history.append({"role": "assistant", "content": reply})
     if len(chat_history) > MAX_HISTORY_MESSAGES:
         del chat_history[: len(chat_history) - MAX_HISTORY_MESSAGES]
@@ -237,6 +288,43 @@ def parse_quiz_args(argument: str):
 def safe_doc_name(topic: str, suffix: str) -> Path:
     slug = re.sub(r"[^a-zA-Z0-9_-]+", "_", topic.strip().lower()).strip("_") or "quiz"
     return DOWNLOAD_DIR / f"{slug}_{suffix}.docx"
+
+
+def extract_document_text(file_path: Path, filename: str) -> str:
+    """Extract plain text from an uploaded document for Reader Mode.
+    Supports .txt, .pdf (via pdfplumber), .docx (via python-docx).
+    Returns "" if extraction fails or the format isn't supported.
+    """
+    suffix = Path(filename).suffix.lower()
+    try:
+        if suffix == ".txt":
+            return file_path.read_text(encoding="utf-8", errors="ignore").strip()
+
+        if suffix == ".pdf":
+            if not HAVE_PDFPLUMBER:
+                print("[Server] Reader Mode: pdfplumber not installed, cannot read PDF")
+                return ""
+            text_parts = []
+            with pdfplumber.open(file_path) as pdf:
+                for page in pdf.pages:
+                    page_text = page.extract_text() or ""
+                    if page_text:
+                        text_parts.append(page_text)
+            return "\n\n".join(text_parts).strip()
+
+        if suffix == ".docx":
+            if not HAVE_DOCX:
+                print("[Server] Reader Mode: python-docx not installed, cannot read .docx")
+                return ""
+            doc = python_docx.Document(str(file_path))
+            paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+            return "\n".join(paragraphs).strip()
+
+        # .doc (legacy binary Word) is not supported without extra tooling
+        return ""
+    except Exception as exc:
+        print(f"[Server] Reader Mode extraction failed for {filename}: {exc}")
+        return ""
 
 
 def extract_image_text(image_path: Path) -> str:
@@ -373,31 +461,7 @@ def command_response(command_text: str, language: str = "English", profile: dict
         context, source = get_context_for_topic(argument)
         if not context:
             return {"type": "system", "response": f"No reference material found for '{argument}'."}
-
-        TARGET_LEN = 1200
-        LOOKAHEAD = 300  # allow a little extra room to find a clean sentence end
-
-        if len(context) > TARGET_LEN:
-            window = context[:TARGET_LEN + LOOKAHEAD]
-
-            # Prefer a sentence end at or after the target length, within the lookahead
-            next_period = window.find(".", TARGET_LEN)
-            # Also consider a sentence end just before the target length
-            prev_period = window.rfind(".", 0, TARGET_LEN)
-
-            if next_period != -1:
-                preview = window[: next_period + 1]
-            elif prev_period > TARGET_LEN * 0.6:
-                preview = window[: prev_period + 1]
-            else:
-                trimmed = window[:TARGET_LEN]
-                last_space = trimmed.rfind(" ")
-                if last_space > 0:
-                    trimmed = trimmed[:last_space].rstrip()
-                preview = trimmed + "..."
-        else:
-            preview = context
-
+        preview = context[:1200] + ("..." if len(context) > 1200 else "")
         response_text = (
             f"Search results for '{argument}':\n"
             f"Source: {source}\n\n"
@@ -535,6 +599,77 @@ def process_image():
             "type": "assistant",
             "response": response_text,
             "ocr_text": ocr_text,
+        }
+    )
+
+
+@app.post("/read-document")
+def read_document():
+    """Reader Mode: accept an uploaded document (.txt/.pdf/.docx), extract its
+    text, and have the AI read/summarize it back to the student."""
+    doc_file = request.files.get("document")
+    if doc_file is None or doc_file.filename == "":
+        return jsonify({"error": "Field 'document' is required."}), 400
+
+    filename = secure_filename(doc_file.filename) or "document.txt"
+    saved_path = UPLOAD_DIR / f"{uuid4().hex}_{filename}"
+    doc_file.save(saved_path)
+
+    extracted_text = extract_document_text(saved_path, filename)
+    if not extracted_text:
+        suffix = Path(filename).suffix.lower()
+        if suffix == ".doc":
+            hint = "Legacy .doc files are not supported -- please upload .docx, .pdf, or .txt."
+        elif suffix == ".pdf" and not HAVE_PDFPLUMBER:
+            hint = "PDF reading isn't available on this server (pdfplumber not installed)."
+        elif suffix == ".docx" and not HAVE_DOCX:
+            hint = ".docx reading isn't available on this server (python-docx not installed)."
+        else:
+            hint = "No readable text was found in this document."
+        return jsonify({"error": hint}), 422
+
+    profile = request.form.get("profile")
+    profile_data = {}
+    if profile:
+        try:
+            profile_data = json.loads(profile)
+        except Exception:
+            profile_data = {}
+    language = request.form.get("language", "English")
+    mode = request.form.get("mode", "summarize")  # "summarize" or "read"
+
+    # Cap extremely long documents to keep the prompt reasonable
+    max_chars = 4000
+    truncated = len(extracted_text) > max_chars
+    doc_text_for_prompt = extracted_text[:max_chars]
+
+    if mode == "read":
+        # "Read full content back" doesn't need an LLM call at all -- routing
+        # it through the model just makes it slowly retype the document one
+        # token at a time (capped at 8192 output tokens, which is why this
+        # used to take forever). The extracted text IS the reading, so hand
+        # it back directly and only translate it if the student's learning
+        # language isn't English.
+        response_text = extracted_text
+        if normalize_language(language).lower() != "english":
+            response_text = google_translate(response_text, language, source_language="English")
+    else:
+        reader_prompt = (
+            "The student uploaded a document for Reader Mode. Summarize its content clearly, "
+            "highlight key points, and explain anything that may need clarification for their "
+            "grade/subject level. Stay factual and based only on the document text provided.\n\n"
+            f"Document text:\n{doc_text_for_prompt}"
+        )
+        # Summaries should be short -- a small token budget makes this return
+        # in a couple seconds instead of budgeting for an 8192-token reply.
+        response_text = tutorbot_reply(reader_prompt, language=language, profile=profile_data, max_tokens=900)
+    return jsonify(
+        {
+            "type": "assistant",
+            "response": response_text,
+            "extracted_text": extracted_text,
+            "truncated": truncated,
+            "filename": filename,
         }
     )
 
@@ -790,6 +925,15 @@ def api_user_profile():
         return jsonify({"ok": True, "user": user})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
+
+
+@app.errorhandler(404)
+def handle_not_found(error):
+    path = request.path if request else "unknown"
+    if path.startswith("/api/"):
+        return jsonify({"error": f"Endpoint not found: {path}", "path": path}), 404
+    return send_from_directory(WEB_DIR, "index.html")
+
 
 
 @app.errorhandler(404)

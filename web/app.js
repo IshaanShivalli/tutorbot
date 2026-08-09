@@ -25,9 +25,34 @@ const messagesEl = document.getElementById("messages");
 const emptyState = document.getElementById("emptyState");
 const chatHistoryList = document.getElementById("chatHistoryList");
 const newChatButton = document.getElementById("newChatButton");
+const historySidebar = document.getElementById("historySidebar");
+const sidebarToggleButton = document.getElementById("sidebarToggleButton");
+const sidebarBackdrop = document.getElementById("sidebarBackdrop");
+
+function openSidebar() {
+  if (historySidebar) historySidebar.classList.add("open");
+  if (sidebarBackdrop) sidebarBackdrop.classList.remove("hidden");
+}
+function closeSidebar() {
+  if (historySidebar) historySidebar.classList.remove("open");
+  if (sidebarBackdrop) sidebarBackdrop.classList.add("hidden");
+}
+if (sidebarToggleButton) {
+  sidebarToggleButton.addEventListener("click", () => {
+    if (historySidebar && historySidebar.classList.contains("open")) {
+      closeSidebar();
+    } else {
+      openSidebar();
+    }
+  });
+}
+if (sidebarBackdrop) {
+  sidebarBackdrop.addEventListener("click", closeSidebar);
+}
 const chatForm = document.getElementById("chatForm");
 const promptInput = document.getElementById("promptInput");
 const sendButton = document.getElementById("sendButton");
+const stopButton = document.getElementById("stopButton");
 const statusEl = document.getElementById("status");
 const suggestionsEl = document.getElementById("suggestions");
 
@@ -37,8 +62,10 @@ const menuUploadImage = document.getElementById("menuUploadImage");
 const menuUseCamera = document.getElementById("menuUseCamera");
 const menuProcessImage = document.getElementById("menuProcessImage");
 const menuFiles = document.getElementById("menuFiles");
+const menuReaderMode = document.getElementById("menuReaderMode");
 const fileInput = document.getElementById("fileInput");
 const filesInput = document.getElementById("filesInput");
+const readerInput = document.getElementById("readerInput");
 
 const cameraPanel = document.getElementById("cameraPanel");
 const cameraPreview = document.getElementById("cameraPreview");
@@ -52,12 +79,6 @@ const settingsButton = document.getElementById("settingsButton");
 const settingsPanel = document.getElementById("settingsPanel");
 const closeSettings = document.getElementById("closeSettings");
 const saveSettings = document.getElementById("saveSettings");
-const dictionaryButton = document.getElementById("dictionaryButton");
-const dictionaryModal = document.getElementById("dictionaryModal");
-const closeDictionaryModal = document.getElementById("closeDictionaryModal");
-const dictionaryInput = document.getElementById("dictionaryInput");
-const dictionaryResult = document.getElementById("dictionaryResult");
-const lookupDictionaryButton = document.getElementById("lookupDictionaryButton");
 const logoutButton = document.getElementById("logoutButton");
 const ssidInput = document.getElementById("ssidInput");
 const passwordInput = document.getElementById("passwordInput");
@@ -82,26 +103,24 @@ const filesPanel = document.getElementById("filesPanel");
 const closeFiles = document.getElementById("closeFiles");
 const filesList = document.getElementById("filesList");
 
-const PUBLIC_API_HOST = (() => {
-  const config = window.__TUTORBOT_CONFIG__ || {};
-  const configuredHost = (config.apiHost || "http://tutorbot.all.edu").trim();
-  return configuredHost.replace(/\/$/, "");
-})();
-const API_HOST = (() => {
-  if (window.location.protocol === "file:" || window.location.protocol === "null:") {
-    return "http://127.0.0.1:5000";
-  }
-  const host = window.location.hostname;
-  if (host === "localhost" || host === "127.0.0.1" || host === "::1") {
-    return window.location.origin;
-  }
-  return PUBLIC_API_HOST;
-})();
+const readerModal = document.getElementById("readerModal");
+const closeReaderModal = document.getElementById("closeReaderModal");
+const readerPickFileButton = document.getElementById("readerPickFileButton");
+const readerStatus = document.getElementById("readerStatus");
+
+const API_HOST = (window.location.protocol === "file:" || window.location.protocol === "null:") ? "http://127.0.0.1:5000" : window.location.origin;
+
+// ESP32_HOST is used specifically for routes that must be relayed through the
+// ESP32 board itself (so its TFT face/LED animate) rather than the PC server
+// directly. Falls back to same-origin if no config was injected via api-config.js.
+const ESP32_HOST = (window.__TUTORBOT_CONFIG__ && window.__TUTORBOT_CONFIG__.esp32Host)
+  ? window.__TUTORBOT_CONFIG__.esp32Host
+  : window.location.origin;
 
 let ttsEnabled = false;
 let mediaStream = null;
 let profile = loadJSON("tb_profile", { grade: "Grade 9", subject: "General" });
-let settings = loadJSON("tb_settings", { language: "English", learningLanguage: "English", ssid: "", password: "", theme: "dark" });
+let settings = loadJSON("tb_settings", { language: "English", learningLanguage: "English", ssid: "", password: "", theme: "light" });
 let surveyQuestions = [];
 let activeChatId = localStorage.getItem(`tb_active_chat_${currentAccount()}`) || "";
 
@@ -187,7 +206,7 @@ function applyTheme(theme) {
     themeSelect.value = theme;
   }
 }
-applyTheme(settings.theme || "dark");
+applyTheme(settings.theme || "light");
 
 let isRegistered = false; // Toggles between login and registration mode
 
@@ -200,7 +219,8 @@ if (localStorage.getItem("tb_session") === "active") {
 }
 
 if (authToggleButton) {
-  authToggleButton.addEventListener("click", () => {
+  authToggleButton.addEventListener("click", (e) => {
+    e.preventDefault();
     isRegistered = !isRegistered;
     otpLabel.classList.add("hidden");
     passwordLabel.classList.remove("hidden");
@@ -434,7 +454,10 @@ function renderChatSidebar() {
     open.type = "button";
     open.className = `chat-history-open ${chat.id === activeChatId ? "active" : ""}`;
     open.textContent = chat.title || "New chat";
-    open.addEventListener("click", () => loadChat(chat.id));
+    open.addEventListener("click", () => {
+      loadChat(chat.id);
+      closeSidebar();
+    });
     const del = document.createElement("button");
     del.type = "button";
     del.className = "chat-history-delete";
@@ -497,8 +520,8 @@ function deleteChat(chatId) {
 
 function reloadAccountState() {
   profile = loadJSON("tb_profile", { grade: "Grade 9", subject: "General" });
-  settings = loadJSON("tb_settings", { language: "English", learningLanguage: "English", ssid: "", password: "", theme: "dark" });
-  applyTheme(settings.theme || "dark");
+  settings = loadJSON("tb_settings", { language: "English", learningLanguage: "English", ssid: "", password: "", theme: "light" });
+  applyTheme(settings.theme || "light");
   updateProfileText();
   checkStreak();
 }
@@ -526,67 +549,6 @@ if (logoutButton) {
   logoutButton.addEventListener("click", () => {
     if (confirm("Log out of TutorBot?")) {
       logout();
-    }
-  });
-}
-
-async function lookupDictionaryMeaning() {
-  const word = (dictionaryInput?.value || "").trim();
-  if (!word) {
-    if (dictionaryResult) dictionaryResult.textContent = "Please enter a word to look up.";
-    return;
-  }
-  if (dictionaryResult) {
-    dictionaryResult.textContent = "Looking up meaning...";
-  }
-  try {
-    const res = await fetch("/dictionary", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        word,
-        profile: { grade: profile.grade, subject: profile.subject },
-      }),
-    });
-    const data = await res.json();
-    if (data.error) {
-      if (dictionaryResult) dictionaryResult.textContent = data.error;
-    } else if (dictionaryResult) {
-      dictionaryResult.textContent = `${word}\n\n${data.meaning}`;
-    }
-  } catch (err) {
-    if (dictionaryResult) dictionaryResult.textContent = `Could not look up the word: ${err.message}`;
-  }
-}
-
-if (dictionaryButton) {
-  dictionaryButton.addEventListener("click", () => {
-    if (dictionaryModal) {
-      dictionaryModal.classList.remove("hidden");
-      dictionaryModal.setAttribute("aria-hidden", "false");
-      setTimeout(() => dictionaryInput?.focus(), 50);
-    }
-  });
-}
-
-if (closeDictionaryModal) {
-  closeDictionaryModal.addEventListener("click", () => {
-    if (dictionaryModal) {
-      dictionaryModal.classList.add("hidden");
-      dictionaryModal.setAttribute("aria-hidden", "true");
-    }
-  });
-}
-
-if (lookupDictionaryButton) {
-  lookupDictionaryButton.addEventListener("click", lookupDictionaryMeaning);
-}
-
-if (dictionaryInput) {
-  dictionaryInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      lookupDictionaryMeaning();
     }
   });
 }
@@ -702,6 +664,61 @@ function removeTyping() {
   if (row) row.remove();
 }
 
+// Reveals `text` word-by-word inside a fresh assistant bubble, to visually
+// communicate "generating" even though the backend returns one full response
+// rather than a real token stream. Returns a controller with .skip() to
+// instantly reveal the rest (used when the user hits Stop) and a promise
+// that resolves once the reveal finishes (or is skipped).
+function addStreamedMessage(text, options = {}) {
+  hideEmptyState();
+  const row = document.createElement("div");
+  row.className = "msg-row";
+
+  const avatar = document.createElement("div");
+  avatar.className = "avatar tutorbot-avatar";
+  avatar.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"></rect><circle cx="12" cy="5" r="2"></circle><path d="M12 7v4M8 15h.01M16 15h.01"></path></svg>`;
+  row.appendChild(avatar);
+
+  const bubble = document.createElement("div");
+  bubble.className = "bubble assistant streaming";
+  row.appendChild(bubble);
+  messagesEl.appendChild(row);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+
+  const words = (text || "").split(/(\s+)/); // keep whitespace tokens so spacing is preserved
+  let i = 0;
+  let stopped = false;
+  let resolveDone;
+  const done = new Promise((resolve) => { resolveDone = resolve; });
+
+  function finish() {
+    bubble.classList.remove("streaming");
+    bubble.innerHTML = renderInline(text || "");
+    resolveDone();
+  }
+
+  function tick() {
+    if (stopped) return;
+    if (i >= words.length) {
+      finish();
+      return;
+    }
+    i++;
+    bubble.textContent = words.slice(0, i).join("");
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    setTimeout(tick, 28);
+  }
+  tick();
+
+  return {
+    skip() {
+      stopped = true;
+      finish();
+    },
+    done,
+  };
+}
+
 function speak(text) {
   if (!("speechSynthesis" in window)) return;
   window.speechSynthesis.cancel();
@@ -723,7 +740,19 @@ function saveLogToHistory(role, text) {
   } catch (e) {}
 }
 
+let activeGenerationController = null;
+let activeStreamHandle = null;
+let isGenerating = false;
+
+function setGeneratingState(generating) {
+  isGenerating = generating;
+  sendButton.classList.toggle("hidden", generating);
+  if (stopButton) stopButton.classList.toggle("hidden", !generating);
+  promptInput.disabled = generating;
+}
+
 async function sendPrompt(text) {
+  if (isGenerating) return; // one response at a time -- ignore repeat sends while a reply is in flight
   if (currentAccount() === "guest") {
     addMessage("error", "Please log in before using TutorBot.");
     return;
@@ -749,11 +778,16 @@ async function sendPrompt(text) {
   }
   promptInput.value = "";
   autoGrow();
-  sendButton.disabled = true;
+  sendButton.classList.remove("sent-pulse");
+  void sendButton.offsetWidth; // restart animation if fired rapidly
+  sendButton.classList.add("sent-pulse");
+  setGeneratingState(true);
   addTyping();
 
+  activeGenerationController = new AbortController();
+
   try {
-    const res = await fetch("/ai-chat", {
+    const res = await fetch(`${ESP32_HOST}/ai-chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -762,6 +796,7 @@ async function sendPrompt(text) {
         interfaceLanguage: settings.language,
         profile: { grade: profile.grade, subject: profile.subject },
       }),
+      signal: activeGenerationController.signal,
     });
     const data = await res.json();
     removeTyping();
@@ -772,14 +807,59 @@ async function sendPrompt(text) {
         settings.learningLanguage = data.settings.learningLanguage;
         saveJSON("tb_settings", settings);
       }
-      addMessage(data.type || "assistant", data.response, data.files, { chatId: requestChatId });
+      if (data.type && data.type !== "assistant") {
+        addMessage(data.type, data.response, data.files, { chatId: requestChatId });
+      } else {
+        // Persist to history/localStorage right away (skipSave:false is the
+        // default) but render nothing yet -- addStreamedMessage below handles
+        // the on-screen bubble, so we save via a silent call first.
+        saveLogToHistory(data.type || "assistant", data.response);
+        saveMessageToChat(requestChatId, data.type || "assistant", data.response, data.files);
+
+        activeStreamHandle = addStreamedMessage(data.response, {});
+        await activeStreamHandle.done;
+        activeStreamHandle = null;
+
+        if (data.files && data.files.length) {
+          const lastBubble = messagesEl.lastElementChild?.querySelector(".bubble");
+          if (lastBubble) {
+            data.files.forEach((f) => {
+              const chip = document.createElement("div");
+              chip.className = "file-chip";
+              chip.innerHTML = `<span>📄</span><a href="${f.download_url}" target="_blank" rel="noopener">${escapeHTML(f.name)}</a>`;
+              lastBubble.appendChild(chip);
+            });
+          }
+        }
+        if (ttsEnabled && data.response) speak(data.response);
+      }
     }
   } catch (err) {
     removeTyping();
-    addMessage("error", `Connection failed: ${err.message}`, null, { chatId: requestChatId });
+    if (err.name === "AbortError") {
+      addMessage("system", "Generation stopped.", null, { chatId: requestChatId });
+    } else {
+      addMessage("error", `Connection failed: ${err.message}`, null, { chatId: requestChatId });
+    }
   } finally {
-    sendButton.disabled = false;
+    setGeneratingState(false);
+    activeGenerationController = null;
   }
+}
+
+if (stopButton) {
+  stopButton.addEventListener("click", () => {
+    if (activeStreamHandle) {
+      // Reveal is running client-side (response already arrived) -- just
+      // fast-forward to the full text instead of aborting a finished fetch.
+      activeStreamHandle.skip();
+      activeStreamHandle = null;
+      setGeneratingState(false);
+    } else if (activeGenerationController) {
+      // Still waiting on the network response -- actually cancel it.
+      activeGenerationController.abort();
+    }
+  });
 }
 
 chatForm.addEventListener("submit", (e) => {
@@ -878,7 +958,72 @@ menuProcessImage.addEventListener("click", () => {
 
 menuFiles.addEventListener("click", () => openFilesPanel());
 
+menuReaderMode.addEventListener("click", () => openReaderModal());
+
+const headerReaderButton = document.getElementById("headerReaderButton");
+if (headerReaderButton) {
+  headerReaderButton.addEventListener("click", () => openReaderModal());
+}
+
+function openReaderModal() {
+  readerStatus.textContent = "";
+  readerModal.classList.remove("hidden");
+  readerModal.setAttribute("aria-hidden", "false");
+}
+
+function closeReaderModalFn() {
+  readerModal.classList.add("hidden");
+  readerModal.setAttribute("aria-hidden", "true");
+}
+
+closeReaderModal.addEventListener("click", closeReaderModalFn);
+
+readerPickFileButton.addEventListener("click", () => readerInput.click());
+
+readerInput.addEventListener("change", async () => {
+  const file = readerInput.files[0];
+  readerInput.value = "";
+  if (!file) return;
+
+  const modeChoice = document.querySelector('input[name="readerMode"]:checked');
+  const mode = modeChoice ? modeChoice.value : "summarize";
+
+  readerStatus.textContent = `Reading ${file.name}...`;
+
+  const form = new FormData();
+  form.append("document", file);
+  form.append("language", settings.learningLanguage);
+  form.append("mode", mode);
+  form.append("profile", JSON.stringify({ grade: profile.grade, subject: profile.subject }));
+
+  try {
+    const res = await fetch(`${API_HOST}/read-document`, { method: "POST", body: form });
+    const data = await res.json();
+    if (data.error) {
+      readerStatus.textContent = data.error;
+      return;
+    }
+    closeReaderModalFn();
+    addMessage("user", `📖 Reader mode: ${file.name}`);
+    addMessage("assistant", data.response);
+    if (data.truncated) {
+      addMessage("system", "Note: this document was long, so only the first portion was read.");
+    }
+  } catch (err) {
+    readerStatus.textContent = `Reader mode failed: ${err.message}`;
+  }
+});
+
 menuUseCamera.addEventListener("click", async () => {
+  if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    addMessage(
+      "error",
+      "Camera access needs a secure connection (HTTPS) or 'localhost'. Since you're on " +
+      window.location.origin +
+      ", your browser is blocking camera access for security reasons. Use \"Upload image\" instead, or ask the site owner to enable HTTPS on the server."
+    );
+    return;
+  }
   try {
     mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
     cameraPreview.srcObject = mediaStream;
@@ -1024,7 +1169,7 @@ settingsButton.addEventListener("click", () => {
   learningLanguageSelect.value = settings.learningLanguage;
   const themeSelect = document.getElementById("themeSelect");
   if (themeSelect) {
-    themeSelect.value = settings.theme || "dark";
+    themeSelect.value = settings.theme || "light";
     document.getElementById("customThemeControls").style.display = (settings.theme === "custom") ? "block" : "none";
   }
   if (surveyQuestionsInput) {
@@ -1135,7 +1280,7 @@ saveFocusButton.addEventListener("click", () => {
 const themeToggleButton = document.getElementById("themeToggleButton");
 if (themeToggleButton) {
   themeToggleButton.addEventListener("click", () => {
-    const currentTheme = settings.theme || "dark";
+    const currentTheme = settings.theme || "light";
     const nextTheme = currentTheme === "dark" ? "light" : "dark";
     settings.theme = nextTheme;
     applyTheme(nextTheme);
