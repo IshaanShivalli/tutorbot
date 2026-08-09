@@ -110,7 +110,20 @@ last_quiz_grade = "Grade 9"
 esp32_settings = {"ssid": "", "password": ""}
 
 app = Flask(__name__, static_folder=str(WEB_DIR), static_url_path="")
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0  # disable Flask's default static-file caching
 CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
+
+
+@app.after_request
+def _disable_caching(response):
+    # Without this, browsers keep reusing a stale cached copy of app.js /
+    # styles.css (you'll see "304 Not Modified" in this server's log for
+    # them) even after the files on disk have changed -- so a real fix can
+    # look like it "didn't work" when it's actually just not being loaded.
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 def _read_request_data() -> dict:

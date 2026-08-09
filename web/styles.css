@@ -30,7 +30,8 @@ body.light-theme {
   --panel: rgba(255, 255, 255, 0.92);
   --panel-2: rgba(240, 237, 247, 0.95);
   --line: rgba(10, 8, 18, 0.1);
-  --text: #1a1726;
+  --text: #14101f;          /* dedicated light-mode text color, not a reused dark-mode value */
+  --text-light-mode: #14101f;
   --muted: #645f75;
   --chalk: #8b2cf5;
   --chalk-soft: rgba(139, 44, 245, 0.12);
@@ -103,6 +104,39 @@ body.light-theme .muted,
 body.light-theme .chat-history-open,
 body.light-theme .chat-history-delete {
   color: var(--text);
+}
+
+/* Explicit light-mode text safety net: force the dedicated light text color
+   on every place a message/response actually renders, so it can never end
+   up invisible regardless of inheritance elsewhere in this file. */
+body.light-theme .bubble,
+body.light-theme .bubble.assistant,
+body.light-theme .bubble.system,
+body.light-theme .bubble.error,
+body.light-theme .empty-state,
+body.light-theme .empty-title,
+body.light-theme .empty-kicker,
+body.light-theme .messages,
+body.light-theme .focus-value,
+body.light-theme .focus-label,
+body.light-theme .suggestion,
+body.light-theme .cmd-btn,
+body.light-theme .menu-item,
+body.light-theme .field-label,
+body.light-theme .modal-card,
+body.light-theme .auth-card {
+  color: var(--text-light-mode) !important;
+}
+/* Bubble sent by the user sits on a solid purple gradient, not the page
+   background -- keep that one white or it becomes unreadable the other way. */
+body.light-theme .bubble.user,
+body.light-theme .bubble.user * {
+  color: #ffffff !important;
+}
+/* Active pill (e.g. selected tab) sits on solid --chalk, not the page bg. */
+body.light-theme .pill.active,
+body.light-theme .pill.active * {
+  color: #ffffff !important;
 }
 
 * {
