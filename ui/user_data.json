@@ -5,7 +5,7 @@
       "role": "guest",
       "email": "guest@tutorbot.com",
       "password_hash": null,
-      "created_at": "2026-08-07T19:28:36.248016Z",
+      "created_at": "2026-08-08T06:08:12.907955Z",
       "last_active": null,
       "verified": false,
       "display_name": ""
@@ -15,28 +15,58 @@
       "role": "admin",
       "email": "admin@tutorbot.com",
       "password_hash": null,
-      "created_at": "2026-08-07T19:28:36.248016Z",
+      "created_at": "2026-08-08T06:08:12.907955Z",
       "last_active": null,
       "verified": false,
       "display_name": ""
     },
-    "ishaans": {
-      "username": "ishaans",
+    "smilewithishaan25@gmail.com": {
+      "username": "smilewithishaan25@gmail.com",
       "role": "student",
-      "email": "",
+      "email": "smilewithishaan25@gmail.com",
       "password_hash": null,
-      "created_at": "2026-08-07T19:28:36.248016Z",
-      "last_active": "2026-08-07T19:28:36.248016Z",
+      "created_at": "2026-08-08T06:08:12.907955Z",
+      "last_active": "2026-08-08T10:10:12.648381Z",
       "verified": true,
       "display_name": "",
       "grade": "Grade 9",
-      "subject": "General",
+      "subject": "Mathematics",
       "streak": 1,
       "lastActiveDate": "Sat Aug 08 2026",
       "weakSubject": "Algebra",
       "surveyFilled": true
+    },
+    "ball": {
+      "username": "ball",
+      "role": "student",
+      "email": "gopeshforlife@tutamail.com",
+      "password_hash": "pbkdf2_sha256$200000$fbafb8cba5b8877fafc84af7f5e9f701$d631e6de2be423658e2ecaee9142ca769cf0bae95e26350b5c4968183cfb6a68",
+      "created_at": "2026-08-08T07:17:17.282877Z",
+      "last_active": "2026-08-08T07:20:08.795292Z",
+      "verified": true,
+      "display_name": ""
     }
   },
-  "current_user": "guest",
-  "pending_verifications": {}
+  "current_user": "ball",
+  "pending_verifications": {},
+  "survey_questions": [
+    {
+      "key": "grade",
+      "label": "Grade level",
+      "type": "select",
+      "options": []
+    },
+    {
+      "key": "subject",
+      "label": "Preferred subject",
+      "type": "select",
+      "options": []
+    },
+    {
+      "key": "weak_subject",
+      "label": "Weakest subject",
+      "type": "text",
+      "options": []
+    }
+  ]
 }

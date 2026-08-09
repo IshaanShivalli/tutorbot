@@ -5,6 +5,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from flask import Flask, jsonify, request, send_from_directory
+from flask_cors import CORS
 from PIL import Image
 from werkzeug.utils import secure_filename
 from werkzeug.serving import run_simple
@@ -68,6 +69,7 @@ last_quiz_grade = "Grade 9"
 esp32_settings = {"ssid": "", "password": ""}
 
 app = Flask(__name__, static_folder=str(WEB_DIR), static_url_path="")
+CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
 
 
 def _read_request_data() -> dict:

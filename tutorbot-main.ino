@@ -4,8 +4,31 @@
 #include <HTTPClient.h>
 #include <LittleFS.h>
 #include <ESPmDNS.h>
-const char* ssid = "daf6net";
-const char* password = "NOTYOURNET";
+#include "DHT.h"
+#include <TFT_eSPI.h>
+
+// TFT Display
+TFT_eSPI tft = TFT_eSPI();
+
+// LED Pins
+#define LED_RED 25
+#define LED_BLUE 26
+#define LED_GREEN 27
+
+// DHT11 Sensor
+#define DHTPIN 14
+#define DHTTYPE DHT11
+DHT dht(DHTPIN, DHTTYPE);
+
+// Temperature threshold (Celsius)
+#define TEMP_THRESHOLD 40.0
+bool serverDisabledDueToHeat = false;
+const char* ssid = "Airtel-MW40-A5A1";
+const char* password = "72442256";
+
+// Server connection status
+bool serverConnected = false;
+uint32_t lastServerCheck = 0;
 
 String pcBaseUrl = "http://localhost:5000";
 const char* customPcHost = "tutorbot.all.edu";
@@ -64,6 +87,177 @@ bool isHttpUrl(const String& value) {
   return value.startsWith("http://") || value.startsWith("https://");
 }
 
+void setLedStatus(String status) {
+  digitalWrite(LED_RED, LOW);
+  digitalWrite(LED_BLUE, LOW);
+  digitalWrite(LED_GREEN, LOW);
+
+  if (status == "red") {
+    digitalWrite(LED_RED, HIGH);
+    Serial.println("LED: RED - WiFi not connected");
+  } else if (status == "blue") {
+    digitalWrite(LED_BLUE, HIGH);
+    Serial.println("LED: BLUE - WiFi connected, server offline");
+  } else if (status == "green") {
+    digitalWrite(LED_GREEN, HIGH);
+    Serial.println("LED: GREEN - Fully online");
+  }
+}
+
+bool checkServerHealth() {
+  if (WiFi.status() != WL_CONNECTED) {
+    return false;
+  }
+
+  HTTPClient http;
+  http.begin(pcBaseUrl + "/health");
+  int httpCode = http.GET();
+  http.end();
+
+  return (httpCode == 200);
+}
+
+void checkTemperature() {
+  float humidity = dht.readHumidity();
+  float temperature = dht.readTemperature();
+
+  if (isnan(temperature) || isnan(humidity)) {
+    Serial.println("DHT11 read failed!");
+    return;
+  }
+
+  Serial.print("Temperature: ");
+  Serial.print(temperature);
+  Serial.print("°C, Humidity: ");
+  Serial.print(humidity);
+  Serial.println("%");
+
+  if (temperature > TEMP_THRESHOLD && !serverDisabledDueToHeat) {
+    Serial.println("WARNING: Temperature too high! Disabling server to cool down...");
+    serverDisabledDueToHeat = true;
+    serverConnected = false;
+  } else if (temperature < (TEMP_THRESHOLD - 5.0) && serverDisabledDueToHeat) {
+    Serial.println("Temperature normalized. Server connection re-enabled.");
+    serverDisabledDueToHeat = false;
+  }
+}
+
+void updateLedStatus() {
+  if (WiFi.status() != WL_CONNECTED) {
+    setLedStatus("red");
+    serverConnected = false;
+  } else if (serverDisabledDueToHeat) {
+    setLedStatus("blue");
+    serverConnected = false;
+  } else if (serverConnected) {
+    setLedStatus("green");
+  } else {
+    setLedStatus("blue");
+  }
+}
+
+// ========== TFT Mouth Expression Functions ==========
+
+void drawMouthHappy() {
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextSize(2);
+  tft.drawString("TutorBot", 50, 10);
+
+  tft.fillCircle(120, 150, 40, TFT_WHITE);
+  tft.fillCircle(105, 140, 5, TFT_BLACK);
+  tft.fillCircle(135, 140, 5, TFT_BLACK);
+
+  for (int i = 0; i < 20; i++) {
+    int x = 100 + i;
+    int y = 160 + (i - 10) * (i - 10) / 20;
+    tft.drawPixel(x, y, TFT_BLACK);
+  }
+
+  Serial.println("Display: Happy Mouth");
+}
+
+void drawMouthThinking() {
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextSize(2);
+  tft.drawString("Thinking...", 40, 10);
+
+  tft.fillCircle(120, 150, 40, TFT_WHITE);
+  tft.fillCircle(105, 140, 5, TFT_BLACK);
+  tft.fillCircle(135, 140, 5, TFT_BLACK);
+
+  tft.drawLine(100, 165, 140, 165, TFT_BLACK);
+
+  tft.fillCircle(120, 95, 3, TFT_YELLOW);
+
+  Serial.println("Display: Thinking Mouth");
+}
+
+void drawMouthSad() {
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextSize(2);
+  tft.drawString("Error", 60, 10);
+
+  tft.fillCircle(120, 150, 40, TFT_WHITE);
+  tft.fillCircle(105, 140, 5, TFT_BLACK);
+  tft.fillCircle(135, 140, 5, TFT_BLACK);
+
+  for (int i = 0; i < 20; i++) {
+    int x = 100 + i;
+    int y = 170 - (i - 10) * (i - 10) / 20;
+    tft.drawPixel(x, y, TFT_BLACK);
+  }
+
+  Serial.println("Display: Sad Mouth");
+}
+
+void drawMouthNeutral() {
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextSize(2);
+  tft.drawString("Ready", 50, 10);
+
+  tft.fillCircle(120, 150, 40, TFT_WHITE);
+  tft.fillCircle(105, 140, 5, TFT_BLACK);
+  tft.fillCircle(135, 140, 5, TFT_BLACK);
+
+  tft.drawLine(100, 165, 140, 165, TFT_BLACK);
+
+  Serial.println("Display: Neutral Mouth");
+}
+
+void drawMouthListening() {
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextSize(2);
+  tft.drawString("Listening...", 35, 10);
+
+  tft.fillCircle(120, 150, 40, TFT_WHITE);
+  tft.fillCircle(105, 140, 5, TFT_BLACK);
+  tft.fillCircle(135, 140, 5, TFT_BLACK);
+
+  tft.drawCircle(120, 165, 8, TFT_BLACK);
+
+  Serial.println("Display: Listening Mouth");
+}
+
+void drawMouthSpeaking() {
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextSize(2);
+  tft.drawString("Speaking...", 40, 10);
+
+  tft.fillCircle(120, 150, 40, TFT_WHITE);
+  tft.fillCircle(105, 140, 5, TFT_BLACK);
+  tft.fillCircle(135, 140, 5, TFT_BLACK);
+
+  tft.fillRect(105, 160, 30, 12, TFT_BLACK);
+
+  Serial.println("Display: Speaking Mouth");
+}
+
 void applyPcBaseUrl(const String& value) {
   if (value.length() == 0) {
     return;
@@ -93,8 +287,11 @@ bool wifiUp() {
   return WiFi.status() == WL_CONNECTED;
 }
 
-// ---- Generic JSON POST relay: forwards raw body to a PC path, returns PC's response verbatim ----
 void relayJsonPost(const char* pcPath, uint32_t timeoutMs) {
+  if (serverDisabledDueToHeat) {
+    server.send(503, "application/json", "{\"error\":\"Server overheating - connection disabled\"}");
+    return;
+  }
   sendCorsHeaders();
 
   if (!server.hasArg("plain")) {
@@ -132,8 +329,11 @@ void handleRoot() {
   file.close();
 }
 
-// ---- Generic GET relay: fetches a PC path, returns its response verbatim ----
 void relayGet(const char* pcPath, uint32_t timeoutMs) {
+  if (serverDisabledDueToHeat) {
+    server.send(503, "application/json", "{\"error\":\"Server overheating - connection disabled\"}");
+    return;
+  }
   sendCorsHeaders();
 
   if (!wifiUp()) {
@@ -156,52 +356,38 @@ void relayGet(const char* pcPath, uint32_t timeoutMs) {
   }
 }
 
-// ---- /health : answered locally by the ESP32 itself ----
 void handleHealth() {
   sendCorsHeaders();
   server.send(200, "application/json", "{\"ok\":true,\"service\":\"TutorBot ESP32 relay\"}");
 }
 
-// ---- /ai-chat : main chat + slash-commands, relayed to PC ----
 void handleAiChat() {
-  relayJsonPost("/ai-chat", 120000); // generation can be slow, allow up to 120s
+  relayJsonPost("/ai-chat", 120000);
 }
 
-// ---- /clear : reset chat history on PC ----
 void handleClear() {
   relayJsonPost("/clear", 15000);
 }
 
-// ---- /commands : slash-command list for autocomplete ----
 void handleCommands() {
   relayGet("/commands", 15000);
 }
 
-// ---- /esp32/settings (GET) : read stored SSID/password-set flag from PC ----
 void handleEsp32SettingsGet() {
   relayGet("/esp32/settings", 15000);
 }
 
-// ---- /esp32/settings (POST) : store SSID/password on PC for reference ----
 void handleEsp32SettingsPost() {
   relayJsonPost("/esp32/settings", 15000);
 }
 
-// ---- /api/send-otp : relayed to PC ----
 void handleSendOtp() {
-  relayJsonPost("/api/send-otp", 20000); // sending an email can take a few seconds
+  relayJsonPost("/api/send-otp", 20000);
 }
 
-// ---- /api/verify-otp : relayed to PC ----
 void handleVerifyOtp() {
   relayJsonPost("/api/verify-otp", 15000);
 }
-
-// NOTE on multipart routes (/process-image, /files upload):
-// ESP32's WebServer buffers the whole multipart body into server.arg("plain"),
-// which works for small images but is memory-limited (ESP32 has ~300KB free heap).
-// For anything beyond small photos, point the phone app at the PC server directly
-// for these two routes instead of relaying through the ESP32 -- see notes below.
 
 void handleProcessImage() {
   sendCorsHeaders();
@@ -217,7 +403,6 @@ void handleProcessImage() {
   HTTPClient http;
   http.setTimeout(60000);
   http.begin(pcUrl("/process-image"));
-  // Forward whatever content-type the phone sent (multipart boundary included)
   if (server.hasHeader("Content-Type")) {
     http.addHeader("Content-Type", server.header("Content-Type"));
   }
@@ -265,19 +450,39 @@ void handleFilesPost() {
 
 void setup() {
   Serial.begin(115200);
+
+  // Initialize TFT display
+  tft.init();
+  tft.setRotation(0);   // try 0,1,2,3 if orientation looks wrong
+
+  pinMode(LED_RED, OUTPUT);
+  pinMode(LED_BLUE, OUTPUT);
+  pinMode(LED_GREEN, OUTPUT);
+
+  digitalWrite(LED_RED, LOW);
+  digitalWrite(LED_BLUE, LOW);
+  digitalWrite(LED_GREEN, LOW);
+
+  dht.begin();
+  delay(2000);
+  Serial.println("DHT11 sensor initialized");
+
+  drawMouthNeutral();
+
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
 
   Serial.print("Connecting to Wi-Fi");
-  while (WiFi.status() != WL_CONNECTED) {
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < 20) {
     delay(500);
     Serial.print(".");
+    attempts++;
   }
   Serial.println();
   Serial.print("ESP32 relay IP: http://");
   Serial.println(WiFi.localIP());
 
-  // Setup mDNS for local domain name
   if (!MDNS.begin("tutorbot.edu")) {
     Serial.println("Error setting up mDNS");
   } else {
@@ -340,8 +545,25 @@ void setup() {
 
   server.begin();
   Serial.println("TutorBot ESP32 relay started");
+
+  updateLedStatus();
 }
 
 void loop() {
   server.handleClient();
+
+  if (millis() - lastServerCheck >= 5000) {
+    lastServerCheck = millis();
+    serverConnected = checkServerHealth();
+    updateLedStatus();
+  }
+
+  static uint32_t lastTempCheck = 0;
+  if (millis() - lastTempCheck >= 10000) {
+    lastTempCheck = millis();
+    checkTemperature();
+    updateLedStatus();
+  }
+
+  delay(50);
 }

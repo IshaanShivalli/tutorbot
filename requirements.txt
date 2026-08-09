@@ -1,6 +1,7 @@
 beautifulsoup4
 ddgs
 Flask
+Flask-CORS
 huggingface-hub
 llama-cpp-python
 lxml
@@ -12,4 +13,4 @@ requests
 rich
 SpeechRecognition
 textual
-    
+zeroconf
