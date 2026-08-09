@@ -373,7 +373,31 @@ def command_response(command_text: str, language: str = "English", profile: dict
         context, source = get_context_for_topic(argument)
         if not context:
             return {"type": "system", "response": f"No reference material found for '{argument}'."}
-        preview = context[:1200] + ("..." if len(context) > 1200 else "")
+
+        TARGET_LEN = 1200
+        LOOKAHEAD = 300  # allow a little extra room to find a clean sentence end
+
+        if len(context) > TARGET_LEN:
+            window = context[:TARGET_LEN + LOOKAHEAD]
+
+            # Prefer a sentence end at or after the target length, within the lookahead
+            next_period = window.find(".", TARGET_LEN)
+            # Also consider a sentence end just before the target length
+            prev_period = window.rfind(".", 0, TARGET_LEN)
+
+            if next_period != -1:
+                preview = window[: next_period + 1]
+            elif prev_period > TARGET_LEN * 0.6:
+                preview = window[: prev_period + 1]
+            else:
+                trimmed = window[:TARGET_LEN]
+                last_space = trimmed.rfind(" ")
+                if last_space > 0:
+                    trimmed = trimmed[:last_space].rstrip()
+                preview = trimmed + "..."
+        else:
+            preview = context
+
         response_text = (
             f"Search results for '{argument}':\n"
             f"Source: {source}\n\n"
@@ -766,15 +790,6 @@ def api_user_profile():
         return jsonify({"ok": True, "user": user})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
-
-
-@app.errorhandler(404)
-def handle_not_found(error):
-    path = request.path if request else "unknown"
-    if path.startswith("/api/"):
-        return jsonify({"error": f"Endpoint not found: {path}", "path": path}), 404
-    return send_from_directory(WEB_DIR, "index.html")
-
 
 
 @app.errorhandler(404)
