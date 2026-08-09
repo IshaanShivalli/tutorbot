@@ -10,6 +10,8 @@
 // TFT Display
 TFT_eSPI tft = TFT_eSPI();
 
+#include "Face.h"
+
 // LED Pins
 #define LED_RED 25
 #define LED_BLUE 26
@@ -23,8 +25,8 @@ DHT dht(DHTPIN, DHTTYPE);
 // Temperature threshold (Celsius)
 #define TEMP_THRESHOLD 40.0
 bool serverDisabledDueToHeat = false;
-const char* ssid = "Airtel-MW40-A5A1";
-const char* password = "72442256";
+const char* ssid = "Redmi Note 13 Pro 5G";
+const char* password = "rossi_46";
 
 // Server connection status
 bool serverConnected = false;
@@ -156,107 +158,9 @@ void updateLedStatus() {
   }
 }
 
-// ========== TFT Mouth Expression Functions ==========
-
-void drawMouthHappy() {
-  tft.fillScreen(TFT_BLACK);
-  tft.setTextColor(TFT_WHITE);
-  tft.setTextSize(2);
-  tft.drawString("TutorBot", 50, 10);
-
-  tft.fillCircle(120, 150, 40, TFT_WHITE);
-  tft.fillCircle(105, 140, 5, TFT_BLACK);
-  tft.fillCircle(135, 140, 5, TFT_BLACK);
-
-  for (int i = 0; i < 20; i++) {
-    int x = 100 + i;
-    int y = 160 + (i - 10) * (i - 10) / 20;
-    tft.drawPixel(x, y, TFT_BLACK);
-  }
-
-  Serial.println("Display: Happy Mouth");
-}
-
-void drawMouthThinking() {
-  tft.fillScreen(TFT_BLACK);
-  tft.setTextColor(TFT_WHITE);
-  tft.setTextSize(2);
-  tft.drawString("Thinking...", 40, 10);
-
-  tft.fillCircle(120, 150, 40, TFT_WHITE);
-  tft.fillCircle(105, 140, 5, TFT_BLACK);
-  tft.fillCircle(135, 140, 5, TFT_BLACK);
-
-  tft.drawLine(100, 165, 140, 165, TFT_BLACK);
-
-  tft.fillCircle(120, 95, 3, TFT_YELLOW);
-
-  Serial.println("Display: Thinking Mouth");
-}
-
-void drawMouthSad() {
-  tft.fillScreen(TFT_BLACK);
-  tft.setTextColor(TFT_WHITE);
-  tft.setTextSize(2);
-  tft.drawString("Error", 60, 10);
-
-  tft.fillCircle(120, 150, 40, TFT_WHITE);
-  tft.fillCircle(105, 140, 5, TFT_BLACK);
-  tft.fillCircle(135, 140, 5, TFT_BLACK);
-
-  for (int i = 0; i < 20; i++) {
-    int x = 100 + i;
-    int y = 170 - (i - 10) * (i - 10) / 20;
-    tft.drawPixel(x, y, TFT_BLACK);
-  }
-
-  Serial.println("Display: Sad Mouth");
-}
-
-void drawMouthNeutral() {
-  tft.fillScreen(TFT_BLACK);
-  tft.setTextColor(TFT_WHITE);
-  tft.setTextSize(2);
-  tft.drawString("Ready", 50, 10);
-
-  tft.fillCircle(120, 150, 40, TFT_WHITE);
-  tft.fillCircle(105, 140, 5, TFT_BLACK);
-  tft.fillCircle(135, 140, 5, TFT_BLACK);
-
-  tft.drawLine(100, 165, 140, 165, TFT_BLACK);
-
-  Serial.println("Display: Neutral Mouth");
-}
-
-void drawMouthListening() {
-  tft.fillScreen(TFT_BLACK);
-  tft.setTextColor(TFT_WHITE);
-  tft.setTextSize(2);
-  tft.drawString("Listening...", 35, 10);
-
-  tft.fillCircle(120, 150, 40, TFT_WHITE);
-  tft.fillCircle(105, 140, 5, TFT_BLACK);
-  tft.fillCircle(135, 140, 5, TFT_BLACK);
-
-  tft.drawCircle(120, 165, 8, TFT_BLACK);
-
-  Serial.println("Display: Listening Mouth");
-}
-
-void drawMouthSpeaking() {
-  tft.fillScreen(TFT_BLACK);
-  tft.setTextColor(TFT_WHITE);
-  tft.setTextSize(2);
-  tft.drawString("Speaking...", 40, 10);
-
-  tft.fillCircle(120, 150, 40, TFT_WHITE);
-  tft.fillCircle(105, 140, 5, TFT_BLACK);
-  tft.fillCircle(135, 140, 5, TFT_BLACK);
-
-  tft.fillRect(105, 160, 30, 12, TFT_BLACK);
-
-  Serial.println("Display: Speaking Mouth");
-}
+// TFT Mouth/Face expression functions (drawMouthHappy, drawMouthThinking,
+// drawMouthSad, drawMouthNeutral, drawMouthListening, drawMouthSpeaking,
+// blink) now live in Face.h — included near the top of this file.
 
 void applyPcBaseUrl(const String& value) {
   if (value.length() == 0) {
