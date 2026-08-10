@@ -19,12 +19,13 @@ extern TFT_eSPI tft;
 
 #define MOUTH_BAR_W   26
 #define MOUTH_BAR_GAP 14
-#define MOUTH_COLOR   TFT_CYAN
+#define MOUTH_COLOR   TFT_BLUE
+#define EYE_COLOR     TFT_BLUE
 
 // ---------- Status bar (WiFi icon) ----------
 
 inline void drawWifiIcon(int x, int y, bool connected) {
-  uint16_t col = connected ? TFT_WHITE : TFT_RED;
+  uint16_t col = connected ? EYE_COLOR : TFT_RED;
   for (int r = 4; r <= 12; r += 4) {
     for (int a = 200; a <= 340; a += 10) {
       float rad = a * 3.14159f / 180.0f;

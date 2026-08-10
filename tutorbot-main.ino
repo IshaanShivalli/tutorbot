@@ -6,11 +6,52 @@
 #include <ESPmDNS.h>
 #include "DHT.h"
 #include <TFT_eSPI.h>
+#include "BluetoothA2DPSource.h"
 
 // TFT Display
 TFT_eSPI tft = TFT_eSPI();
 
 #include "Face.h"
+
+// ========== Bluetooth speaker (BoAt Stone 170) ==========
+// Requires the "ESP32-A2DP" library by pschatzmann (Arduino Library Manager:
+// search "ESP32-A2DP"). Classic Bluetooth (A2DP) and Wi-Fi can run together
+// on the ESP32, so this doesn't interfere with the relay server above.
+//
+// NOTE: A2DP streams raw PCM audio that this sketch has to supply via
+// btAudioCallback() below. Right now it just sends silence so the speaker
+// connects and stays paired -- hook in real audio (e.g. decoded TTS PCM,
+// or samples read from a buffer/queue) inside that callback when you have
+// an audio source.
+BluetoothA2DPSource a2dp_source;
+const char* boatSpeakerName = "boAt Stone 170";
+bool boatSpeakerConnected = false;
+
+int32_t btAudioCallback(Frame* frame, int32_t frameCount) {
+  // Fill with silence by default -- replace this with real PCM samples
+  // (e.g. pop them from a ring buffer fed by your audio/TTS pipeline).
+  for (int i = 0; i < frameCount; i++) {
+    frame[i].channel1 = 0;
+    frame[i].channel2 = 0;
+  }
+  return frameCount;
+}
+
+void a2dpConnectionStateCallback(esp_a2d_connection_state_t state, void*) {
+  boatSpeakerConnected = (state == ESP_A2D_CONNECTION_STATE_CONNECTED);
+  Serial.print("boAt Stone 170 Bluetooth: ");
+  Serial.println(boatSpeakerConnected ? "connected" : "not connected");
+}
+
+void setupBluetoothSpeaker() {
+  a2dp_source.set_auto_reconnect(true);
+  a2dp_source.set_on_connection_state_changed(a2dpConnectionStateCallback);
+  // start() scans for and connects to a device advertising this name.
+  // If your speaker's Bluetooth name differs, update boatSpeakerName above.
+  a2dp_source.start(boatSpeakerName, btAudioCallback);
+  Serial.print("Searching for Bluetooth speaker: ");
+  Serial.println(boatSpeakerName);
+}
 
 // LED Pins
 #define LED_RED 25
@@ -25,15 +66,15 @@ DHT dht(DHTPIN, DHTTYPE);
 // Temperature threshold (Celsius)
 #define TEMP_THRESHOLD 40.0
 bool serverDisabledDueToHeat = false;
-const char* ssid = "Readme Note 13 Pro 5G";
-const char* password = "rossi_46";
+const char* ssid = "Presidency-WIFI";
+const char* password = "P@$RTN1@3#5";
 
 // Server connection status
 bool serverConnected = false;
 uint32_t lastServerCheck = 0;
 
 String pcBaseUrl = "http://localhost:5000";
-const char* customPcHost = "tutorbot.all.edu";
+const char* customPcHost = "tutorbot.all.edu.local";
 const uint16_t pcPort = 5000;
 
 const unsigned int discoveryPort = 47823;
@@ -366,6 +407,8 @@ void setup() {
   // Initialize TFT display
   tft.init();
   tft.setRotation(0);   // try 0,1,2,3 if orientation looks wrong
+  tft.fillScreen(TFT_BLACK);   // clear the default white/garbage init screen immediately
+  tft.invertDisplay(false);    // flip to true if colors still look inverted (white bg, wrong colors)
 
   pinMode(LED_RED, OUTPUT);
   pinMode(LED_BLUE, OUTPUT);
@@ -381,15 +424,30 @@ void setup() {
 
   drawMouthNeutral();
 
+  // Bluetooth (A2DP) temporarily disabled -- it was crashing
+  // ("assert failed: hash_map_set") when the boAt speaker connected,
+  // which rebooted the whole board and reset Wi-Fi/LED state.
+  // Re-enable once Wi-Fi is confirmed working on its own.
+  // setupBluetoothSpeaker();
+
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
 
   Serial.print("Connecting to Wi-Fi");
   int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 20) {
+  while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
     attempts++;
+    // Every ~10s, print a reminder without giving up -- keeps retrying
+    // indefinitely instead of falling through with no Wi-Fi.
+    if (attempts % 20 == 0) {
+      Serial.println();
+      Serial.println("Still trying to connect to Wi-Fi... check SSID/password,");
+      Serial.println("and whether this network needs a captive-portal login or");
+      Serial.println("WPA2-Enterprise auth (ESP32's basic WiFi.begin() can't do either).");
+      Serial.print("Connecting to Wi-Fi");
+    }
   }
   Serial.println();
   Serial.print("ESP32 relay IP: http://");
