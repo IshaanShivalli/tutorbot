@@ -697,6 +697,22 @@ def health():
     return jsonify({"ok": True, "service": "TutorBot mobile and ESP32 bridge"})
 
 
+@app.get("/student-stats")
+def student_stats():
+    """Compact stats summary for the ESP32's TFT (not the full /stats command
+    text, which is meant for the chat window). Streak is server-tracked here
+    since the ESP32 has no browser localStorage to read a client profile from."""
+    profile_state = gamification.get_profile(streak_count=0)
+    return jsonify(
+        {
+            "level": profile_state["level"],
+            "title": profile_state["title"],
+            "xp": profile_state["xp"],
+            "streak": profile_state["streak"],
+        }
+    )
+
+
 @app.get("/commands")
 def commands():
     return jsonify(

@@ -11,6 +11,12 @@
 // TFT Display
 TFT_eSPI tft = TFT_eSPI();
 
+// LED blink state (declared early -- Arduino auto-generates function
+// prototypes right after the #includes, before reaching definitions further
+// down, so this enum must exist before any function that uses it in its
+// signature or the auto-prototype will fail to compile).
+enum LedMode { LED_MODE_RED, LED_MODE_BLUE_BLINK, LED_MODE_GREEN_BLINK };
+
 #include "Face.h"
 
 // ========== Bluetooth speaker (BoAt Stone 170) ==========
@@ -66,20 +72,23 @@ DHT dht(DHTPIN, DHTTYPE);
 // Temperature threshold (Celsius)
 #define TEMP_THRESHOLD 40.0
 bool serverDisabledDueToHeat = false;
-const char* ssid = "Presidency-WIFI";
-const char* password = "P@$RTN1@3#5";
+const char* ssid = "daf6net";
+const char* password = "NOTYOURNET";
 
 // Server connection status
 bool serverConnected = false;
 uint32_t lastServerCheck = 0;
 
-String pcBaseUrl = "http://localhost:5000";
+String pcBaseUrl = "http://10.173.15.254:5000";
 const char* customPcHost = "tutorbot.all.edu.local";
 const uint16_t pcPort = 5000;
 
 const unsigned int discoveryPort = 47823;
 const char* discoveryMagic = "TUTORBOT_DISCOVER";
 WiFiUDP discoveryUdp;
+
+bool pcServerDiscovered = false;
+uint32_t lastDiscoveryAttempt = 0;
 
 bool discoverPcServer(uint32_t timeoutMs) {
   discoveryUdp.begin(discoveryPort);
@@ -106,6 +115,7 @@ bool discoverPcServer(uint32_t timeoutMs) {
             pcBaseUrl = "http://" + ip + ":" + port;
             Serial.print("Discovered TutorBot PC server: ");
             Serial.println(pcBaseUrl);
+            pcServerDiscovered = true;
             return true;
           }
         }
@@ -130,20 +140,58 @@ bool isHttpUrl(const String& value) {
   return value.startsWith("http://") || value.startsWith("https://");
 }
 
-void setLedStatus(String status) {
-  digitalWrite(LED_RED, LOW);
-  digitalWrite(LED_BLUE, LOW);
-  digitalWrite(LED_GREEN, LOW);
+// ---------- LED status (non-blocking blink state machine) ----------
+// Previously this just did a single digitalWrite(HIGH) per color, which is
+// why "blinking" never actually happened -- there was no blink logic at all.
+LedMode currentLedMode = LED_MODE_RED;
+bool ledBlinkOn = false;
+uint32_t lastLedBlinkToggle = 0;
 
-  if (status == "red") {
-    digitalWrite(LED_RED, HIGH);
-    Serial.println("LED: RED - WiFi not connected");
-  } else if (status == "blue") {
-    digitalWrite(LED_BLUE, HIGH);
-    Serial.println("LED: BLUE - WiFi connected, server offline");
-  } else if (status == "green") {
-    digitalWrite(LED_GREEN, HIGH);
-    Serial.println("LED: GREEN - Fully online");
+void setLedMode(LedMode mode) {
+  if (mode != currentLedMode) {
+    currentLedMode = mode;
+    ledBlinkOn = true;          // snap on immediately when mode changes
+    lastLedBlinkToggle = millis();
+  }
+}
+
+// Call every loop() iteration -- handles the actual blinking without delay().
+void serviceLedBlink() {
+  uint32_t now = millis();
+  switch (currentLedMode) {
+    case LED_MODE_RED:
+      // Solid red: Wi-Fi genuinely not connected, nothing to blink about yet.
+      digitalWrite(LED_RED, HIGH);
+      digitalWrite(LED_BLUE, LOW);
+      digitalWrite(LED_GREEN, LOW);
+      break;
+
+    case LED_MODE_BLUE_BLINK: {
+      // Fast blink: Wi-Fi is up, server is offline/unreachable -- still
+      // retrying continuously in checkServerHealth(), same as Wi-Fi does.
+      const uint32_t interval = 300;
+      if (now - lastLedBlinkToggle >= interval) {
+        lastLedBlinkToggle = now;
+        ledBlinkOn = !ledBlinkOn;
+      }
+      digitalWrite(LED_RED, LOW);
+      digitalWrite(LED_BLUE, ledBlinkOn ? HIGH : LOW);
+      digitalWrite(LED_GREEN, LOW);
+      break;
+    }
+
+    case LED_MODE_GREEN_BLINK: {
+      // Slow blink: fully online -- a gentle "heartbeat" rather than solid on.
+      const uint32_t interval = 10000;
+      if (now - lastLedBlinkToggle >= interval) {
+        lastLedBlinkToggle = now;
+        ledBlinkOn = !ledBlinkOn;
+      }
+      digitalWrite(LED_RED, LOW);
+      digitalWrite(LED_BLUE, LOW);
+      digitalWrite(LED_GREEN, ledBlinkOn ? HIGH : LOW);
+      break;
+    }
   }
 }
 
@@ -158,6 +206,88 @@ bool checkServerHealth() {
   http.end();
 
   return (httpCode == 200);
+}
+
+bool wifiEverConnected = false;
+uint32_t lastWifiAttempt = 0;
+
+// Non-blocking Wi-Fi connect: called every loop() iteration. Never blocks --
+// retries continuously in the background, same pattern as checkServerHealth().
+void serviceWifiConnection() {
+  if (WiFi.status() == WL_CONNECTED) {
+    if (!wifiEverConnected) {
+      wifiEverConnected = true;
+      Serial.print("Wi-Fi connected -- ESP32 relay IP: http://");
+      Serial.println(WiFi.localIP());
+    }
+    return;
+  }
+  uint32_t now = millis();
+  if (now - lastWifiAttempt >= 5000) {
+    lastWifiAttempt = now;
+    Serial.println("Wi-Fi not connected -- retrying...");
+    WiFi.disconnect();
+    WiFi.begin(ssid, password);
+  }
+}
+
+// ---------- Student stats (fetched from Server.py's /student-stats) ----------
+int lastLevel = 0, lastXp = 0, lastStreak = 0;
+char lastTitle[32] = "";
+bool haveStudentStats = false;
+uint32_t lastStatsFetch = 0;
+
+// Minimal manual JSON field extraction -- avoids adding ArduinoJson as a new
+// dependency for a payload this small/flat. Expects e.g.
+// {"level":3,"title":"Rising Star","xp":120,"streak":4}
+bool extractIntField(const String& json, const char* key, int& out) {
+  String needle = String("\"") + key + "\":";
+  int idx = json.indexOf(needle);
+  if (idx < 0) return false;
+  idx += needle.length();
+  out = json.substring(idx).toInt();
+  return true;
+}
+
+bool extractStringField(const String& json, const char* key, char* out, size_t outLen) {
+  String needle = String("\"") + key + "\":\"";
+  int idx = json.indexOf(needle);
+  if (idx < 0) return false;
+  idx += needle.length();
+  int end = json.indexOf('"', idx);
+  if (end < 0) return false;
+  String val = json.substring(idx, end);
+  val.toCharArray(out, outLen);
+  return true;
+}
+
+void fetchStudentStats() {
+  if (WiFi.status() != WL_CONNECTED || serverDisabledDueToHeat) return;
+
+  HTTPClient http;
+  http.setTimeout(8000);
+  http.begin(pcUrl("/student-stats"));
+  int code = http.GET();
+  if (code == 200) {
+    String body = http.getString();
+    int level = 0, xp = 0, streak = 0;
+    char title[32] = "";
+    bool ok = extractIntField(body, "level", level)
+              && extractIntField(body, "xp", xp)
+              && extractIntField(body, "streak", streak)
+              && extractStringField(body, "title", title, sizeof(title));
+    if (ok) {
+      lastLevel = level;
+      lastXp = xp;
+      lastStreak = streak;
+      strncpy(lastTitle, title, sizeof(lastTitle) - 1);
+      haveStudentStats = true;
+    }
+  } else {
+    Serial.print("fetchStudentStats: request failed, code=");
+    Serial.println(code);
+  }
+  http.end();
 }
 
 void checkTemperature() {
@@ -187,15 +317,15 @@ void checkTemperature() {
 
 void updateLedStatus() {
   if (WiFi.status() != WL_CONNECTED) {
-    setLedStatus("red");
+    setLedMode(LED_MODE_RED);
     serverConnected = false;
   } else if (serverDisabledDueToHeat) {
-    setLedStatus("blue");
+    setLedMode(LED_MODE_BLUE_BLINK);
     serverConnected = false;
   } else if (serverConnected) {
-    setLedStatus("green");
+    setLedMode(LED_MODE_GREEN_BLINK);
   } else {
-    setLedStatus("blue");
+    setLedMode(LED_MODE_BLUE_BLINK);
   }
 }
 
@@ -326,6 +456,10 @@ void handleCommands() {
   relayGet("/commands", 15000);
 }
 
+void handleStudentStats() {
+  relayGet("/student-stats", 15000);
+}
+
 void handleEsp32SettingsGet() {
   relayGet("/esp32/settings", 15000);
 }
@@ -435,23 +569,24 @@ void setup() {
 
   Serial.print("Connecting to Wi-Fi");
   int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED) {
+  // Bounded wait here just so mDNS/discovery below have a chance to run
+  // immediately if Wi-Fi is quick. If it's not connected within ~8s, we
+  // stop blocking and hand off to serviceWifiConnection() in loop(), which
+  // retries forever in the background instead of getting stuck here.
+  while (WiFi.status() != WL_CONNECTED && attempts < 16) {
     delay(500);
     Serial.print(".");
     attempts++;
-    // Every ~10s, print a reminder without giving up -- keeps retrying
-    // indefinitely instead of falling through with no Wi-Fi.
-    if (attempts % 20 == 0) {
-      Serial.println();
-      Serial.println("Still trying to connect to Wi-Fi... check SSID/password,");
-      Serial.println("and whether this network needs a captive-portal login or");
-      Serial.println("WPA2-Enterprise auth (ESP32's basic WiFi.begin() can't do either).");
-      Serial.print("Connecting to Wi-Fi");
-    }
   }
   Serial.println();
-  Serial.print("ESP32 relay IP: http://");
-  Serial.println(WiFi.localIP());
+
+  if (WiFi.status() == WL_CONNECTED) {
+    wifiEverConnected = true;
+    Serial.print("ESP32 relay IP: http://");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("Wi-Fi not connected yet -- will keep retrying continuously in the background.");
+  }
 
   if (!MDNS.begin("tutorbot.edu")) {
     Serial.println("Error setting up mDNS");
@@ -496,6 +631,7 @@ void setup() {
   server.on("/clear", HTTP_POST, handleClear);
 
   server.on("/commands", HTTP_GET, handleCommands);
+  server.on("/student-stats", HTTP_GET, handleStudentStats);
 
   server.on("/esp32/settings", HTTP_GET, handleEsp32SettingsGet);
   server.on("/esp32/settings", HTTP_OPTIONS, handleOptions);
@@ -522,10 +658,39 @@ void setup() {
 void loop() {
   server.handleClient();
 
+  serviceWifiConnection();   // non-blocking, retries forever like the server check below
+  serviceLedBlink();         // actually drives the blink now (was missing before)
+  faceUpdate();
+  static uint8_t consecutiveHealthFailures = 0;
   if (millis() - lastServerCheck >= 5000) {
     lastServerCheck = millis();
     serverConnected = checkServerHealth();
     updateLedStatus();
+    if (serverConnected) {
+      consecutiveHealthFailures = 0;
+    } else if (wifiUp() && consecutiveHealthFailures < 255) {
+      consecutiveHealthFailures++;
+      // ~30s of failures (6 checks) while on Wi-Fi -- the PC's IP may have
+      // changed (new DHCP lease, server moved) even though we discovered it
+      // successfully before. Drop the flag so discovery gets retried below.
+      if (consecutiveHealthFailures >= 6) {
+        pcServerDiscovered = false;
+      }
+    }
+  }
+
+  // If we're on Wi-Fi but haven't got a confirmed-good server URL, retry
+  // UDP discovery periodically. Without this, a discovery window missed at
+  // boot (e.g. Wi-Fi/Server.py not fully up yet) strands the ESP32 on the
+  // unresolvable "tutorbot.all.edu.local" fallback forever, since discovery
+  // used to run exactly once in setup(). Short timeout here so it doesn't
+  // stall server.handleClient() for long; runs every 15s while unconfirmed.
+  if (wifiUp() && !pcServerDiscovered && !serverConnected) {
+    if (millis() - lastDiscoveryAttempt >= 15000) {
+      lastDiscoveryAttempt = millis();
+      Serial.println("Server not reachable -- retrying PC discovery...");
+      discoverPcServer(1500);
+    }
   }
 
   static uint32_t lastTempCheck = 0;
@@ -533,6 +698,18 @@ void loop() {
     lastTempCheck = millis();
     checkTemperature();
     updateLedStatus();
+  }
+
+  // Pull the student's stats every 30s and refresh the idle face so the
+  // TFT reflects them without interrupting an active chat exchange.
+  static uint32_t lastFaceRefresh = 0;
+  if (millis() - lastStatsFetch >= 30000) {
+    lastStatsFetch = millis();
+    fetchStudentStats();
+  }
+  if (millis() - lastFaceRefresh >= 5000) {
+    lastFaceRefresh = millis();
+    drawMouthNeutral();
   }
 
   delay(50);
