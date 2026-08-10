@@ -2,6 +2,7 @@
 #define FACE_H
 
 #include <TFT_eSPI.h>
+#include <math.h>
 
 // Requires a global TFT_eSPI instance named `tft` to already exist
 // in the including .ino before this header is used.
@@ -161,16 +162,104 @@ inline void animateThinkingDots(uint32_t nowMs) {
   }
 }
 
-// ---- Speaking: mouth opens/closes like talking ----
-// Call this repeatedly (e.g. every ~90-140ms) while audio is playing --
-// don't just call it once. Eyes are left alone (no need to redraw them
-// every frame -- avoids flicker).
+// ---- Speaking: voice-waveform mouth ----
+// A row of bars whose heights ride a sine wave inside a tapered envelope --
+// reads as an audio waveform rather than a single blob jumping around.
+// Call drawMouthSpeaking() repeatedly (every ~40-80ms) for as long as the
+// bot is talking / waiting on a reply. The animation phase is derived from
+// millis(), so it stays smooth regardless of exactly when you call it --
+// no external state to manage, no start/stop calls needed. Eyes are left
+// alone (no need to redraw them every frame -- avoids flicker).
+
+#define WAVE_BARS    9
+#define WAVE_BAR_W   6
+#define WAVE_BAR_GAP 4
+#define WAVE_MAX_H   30
+#define WAVE_MIN_H   6
+
+inline void drawMouthWave(float phase) {
+  clearMouthZone();
+  int step = WAVE_BAR_W + WAVE_BAR_GAP;
+  int totalW = WAVE_BARS * step - WAVE_BAR_GAP;
+  int startX = FACE_CX - totalW / 2;
+  float maxD = (WAVE_BARS - 1) / 2.0f;
+
+  for (int i = 0; i < WAVE_BARS; i++) {
+    float d = i - maxD;
+    float envelope = 1.0f - fabsf(d) / (maxD + 1.0f);   // tapers down toward the edges
+    float s = sinf(phase + d * 0.8f);                   // traveling wave across the bars
+    int h = WAVE_MIN_H + (int)((WAVE_MAX_H - WAVE_MIN_H) * envelope * (0.5f + 0.5f * s));
+    if (h < WAVE_MIN_H) h = WAVE_MIN_H;
+    int x = startX + i * step;
+    int y = MOUTH_Y - h / 2;
+    tft.fillRoundRect(x, y, WAVE_BAR_W, h, WAVE_BAR_W / 2, FACE_COLOR);
+  }
+}
+
 inline void drawMouthSpeaking() {
-  static int lastW = 20;
-  int w = 16 + random(0, 20);
-  int h = 6 + random(0, 16);
-  drawMouthOpen(w, h);
-  lastW = w;
+  drawMouthWave(millis() * 0.006f);
+}
+
+// ---------- Sleepy face (coolant mode) ----------
+// Eyes drawn as simple closed lines instead of open rounded squares, a calm
+// flat mouth, and a slowly drifting "Zzz" -- shown while the board is
+// deliberately powered down to cool off. No blinking while asleep (the
+// eyes are already closed), just the slow Zzz animation.
+
+inline void drawClosedEyes() {
+  int leftX  = FACE_CX - EYE_GAP / 2 - EYE_W;
+  int rightX = FACE_CX + EYE_GAP / 2;
+  int y = EYE_Y + EYE_H / 2 - 2;
+
+  tft.fillRect(leftX - 6, EYE_Y - 6, EYE_W + 12, EYE_H + 12, BG_COLOR);
+  tft.fillRect(rightX - 6, EYE_Y - 6, EYE_W + 12, EYE_H + 12, BG_COLOR);
+
+  tft.fillRoundRect(leftX,  y, EYE_W, 4, 2, FACE_COLOR);
+  tft.fillRoundRect(rightX, y, EYE_W, 4, 2, FACE_COLOR);
+}
+
+inline void drawFaceSleepy() {
+  tft.fillScreen(BG_COLOR);
+  drawClosedEyes();
+  drawMouthCurve(0, 20);   // small calm flat mouth
+  Serial.println("Display: Sleepy (coolant mode)");
+}
+
+// Call repeatedly (e.g. every ~300ms) while asleep. Three "Z"s of
+// increasing size fade in one at a time near the top-right, then reset --
+// a slow, non-blocking "breathing" cue that the board is still alive, just
+// resting.
+inline void animateSleepyZzz(uint32_t nowMs) {
+  int cycle = (nowMs / 700) % 4;   // 0..2 show progressively more Z's, 3 = pause/reset
+  int x = SCREEN_W - 66;
+  int y = EYE_Y - 46;
+
+  tft.fillRect(x - 8, y - 8, 74, 46, BG_COLOR);
+  tft.setTextColor(FACE_COLOR);
+  tft.setTextDatum(TL_DATUM);
+
+  const int sizes[3] = {1, 2, 3};
+  const int xs[3]     = {x, x + 16, x + 34};
+  const int ys[3]     = {y + 26, y + 12, y};
+
+  for (int i = 0; i < 3; i++) {
+    if (i <= cycle) {
+      tft.setTextSize(sizes[i]);
+      tft.drawString("Z", xs[i], ys[i]);
+    }
+  }
+}
+
+static bool g_faceSleeping = false;
+
+inline void enterSleepMode() {
+  g_faceSleeping = true;
+  drawFaceSleepy();
+}
+
+inline void exitSleepMode() {
+  g_faceSleeping = false;
+  drawMouthNeutral();
 }
 
 // ---------- Non-blocking blink / idle system ----------
@@ -179,6 +268,16 @@ inline void drawMouthSpeaking() {
 // your server/Wi-Fi handling.
 
 inline void faceUpdate() {
+  if (g_faceSleeping) {
+    static uint32_t lastZzzFrame = 0;
+    uint32_t now = millis();
+    if (now - lastZzzFrame >= 300) {
+      lastZzzFrame = now;
+      animateSleepyZzz(now);
+    }
+    return;  // no blinking while asleep -- eyes are already closed
+  }
+
   static uint32_t nextBlinkAt = 0;
   static uint32_t blinkStartedAt = 0;
   static bool blinking = false;

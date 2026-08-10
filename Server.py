@@ -11,7 +11,6 @@ from werkzeug.utils import secure_filename
 from werkzeug.serving import run_simple
 import pytesseract
 import socket
-import threading
 import smtplib
 from email.mime.text import MIMEText
 import random
@@ -973,11 +972,15 @@ def handle_not_found(error):
     return send_from_directory(WEB_DIR, "index.html")
 
 
-# ---- LAN auto-discovery: lets the ESP32 find this PC's current IP without ----
-# ---- hardcoding it -- it broadcasts DISCOVERY_MAGIC, we reply with our IP. ----
-DISCOVERY_PORT = 47823
-DISCOVERY_MAGIC = b"TUTORBOT_DISCOVER"
+# ---- mDNS: advertise this PC as tutorbot.local ----------------------------
+# The ESP32 now hits a fixed http://tutorbot.local:5000 -- no broadcast
+# discovery, no hardcoded IP to update by hand when DHCP hands out a new
+# lease. This publishes an mDNS A-record for "tutorbot.local" pointing at
+# whatever this machine's current LAN IP is, every time the server starts.
+#
+# Requires: pip install zeroconf
 SERVER_PORT = 5000
+MDNS_HOSTNAME = "tutorbot.local."
 
 
 def get_local_ip():
@@ -992,23 +995,28 @@ def get_local_ip():
         s.close()
 
 
-def discovery_responder():
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind(("", DISCOVERY_PORT))
-    print(f"Discovery responder listening on UDP {DISCOVERY_PORT}")
-    while True:
-        try:
-            data, addr = sock.recvfrom(1024)
-            if data.strip() == DISCOVERY_MAGIC:
-                reply = f"TUTORBOT_PC:{get_local_ip()}:{SERVER_PORT}".encode()
-                sock.sendto(reply, addr)
-                print(f"Discovery request from {addr} -> {reply}")
-        except OSError as exc:
-            print("Discovery responder error:", exc)
+def start_mdns():
+    from zeroconf import Zeroconf, ServiceInfo
+
+    ip = get_local_ip()
+    info = ServiceInfo(
+        "_http._tcp.local.",
+        "TutorBot._http._tcp.local.",
+        addresses=[socket.inet_aton(ip)],
+        port=SERVER_PORT,
+        server=MDNS_HOSTNAME,
+    )
+    zc = Zeroconf()
+    zc.register_service(info)
+    print(f"mDNS: advertising {MDNS_HOSTNAME} -> {ip}:{SERVER_PORT}")
+    return zc  # keep a reference alive for the life of the process
 
 
 if __name__ == "__main__":
-    threading.Thread(target=discovery_responder, daemon=True).start()
+    try:
+        _zeroconf_handle = start_mdns()
+    except ImportError:
+        print("mDNS: 'zeroconf' package not installed -- run: pip install zeroconf")
+        print("mDNS: tutorbot.local will NOT resolve until this is installed.")
     print("TutorBot server running at http://0.0.0.0:5000/")
     run_simple("0.0.0.0", 5000, app, threaded=True, use_reloader=False)

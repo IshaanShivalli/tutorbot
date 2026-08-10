@@ -1,6 +1,5 @@
 #include <WiFi.h>
 #include <WebServer.h>
-#include <WiFiUdp.h>
 #include <HTTPClient.h>
 #include <LittleFS.h>
 #include <ESPmDNS.h>
@@ -72,59 +71,51 @@ DHT dht(DHTPIN, DHTTYPE);
 // Temperature threshold (Celsius)
 #define TEMP_THRESHOLD 40.0
 bool serverDisabledDueToHeat = false;
-const char* ssid = "daf6net";
-const char* password = "NOTYOURNET";
+
+// ---- Coolant mode: triggered by a SUDDEN RISE in the ESP32's own chip
+// temperature relative to its surroundings, not an absolute threshold.
+// temperatureRead() (built into the ESP32 Arduino core) reads the chip's
+// internal sensor; dht.readTemperature() reads ambient air near the board.
+// If the chip is running COOLANT_TRIGGER_DELTA °C or more hotter than the
+// surrounding air, something (Wi-Fi/BT radio, regulator, sustained load) is
+// making the board itself heat up unusually -- distinct from the room just
+// being hot, which is what TEMP_THRESHOLD above already guards against.
+// NOTE: temperatureRead() only exists on the original ESP32 (not S2/S3/C3,
+// which lack this peripheral) and can read a little noisy -- that's why
+// there's hysteresis on the exit condition below, to avoid flicker right at
+// the boundary.
+#define COOLANT_TRIGGER_DELTA 2.0
+#define COOLANT_EXIT_DELTA    1.0
+bool coolantModeActive = false;
+
+// Wi-Fi networks in priority order -- serviceWifiConnection() tries #1
+// first; if it can't connect within wifiAttemptTimeoutMs, it moves on to
+// #2, then #3, #4, then wraps back around to #1 and keeps cycling forever.
+// Fill in your real networks here.
+struct WifiCred {
+  const char* ssid;
+  const char* password;
+};
+
+WifiCred wifiNetworks[] = {
+  { "daf6net",       "NOTYOURNET" },   // #1 -- tried first
+  { "NETWORK_2_SSID", "NETWORK_2_PASSWORD" },
+  { "NETWORK_3_SSID", "NETWORK_3_PASSWORD" },
+  { "NETWORK_4_SSID", "NETWORK_4_PASSWORD" },
+};
+const int wifiNetworkCount = sizeof(wifiNetworks) / sizeof(wifiNetworks[0]);
+int currentWifiIndex = 0;
 
 // Server connection status
 bool serverConnected = false;
 uint32_t lastServerCheck = 0;
 
-String pcBaseUrl = "http://10.173.15.254:5000";
-const char* customPcHost = "tutorbot.all.edu.local";
+// PC server is now reached purely via mDNS -- no broadcast discovery, no
+// hardcoded IP. Server.py advertises itself as "tutorbot.local" (see the
+// zeroconf registration added there); MDNS.begin() below lets the ESP32's
+// underlying mDNS resolver look that hostname up on demand.
 const uint16_t pcPort = 5000;
-
-const unsigned int discoveryPort = 47823;
-const char* discoveryMagic = "TUTORBOT_DISCOVER";
-WiFiUDP discoveryUdp;
-
-bool pcServerDiscovered = false;
-uint32_t lastDiscoveryAttempt = 0;
-
-bool discoverPcServer(uint32_t timeoutMs) {
-  discoveryUdp.begin(discoveryPort);
-  IPAddress broadcastIp(255, 255, 255, 255);
-  discoveryUdp.beginPacket(broadcastIp, discoveryPort);
-  discoveryUdp.write((const uint8_t*)discoveryMagic, strlen(discoveryMagic));
-  discoveryUdp.endPacket();
-
-  uint32_t start = millis();
-  while (millis() - start < timeoutMs) {
-    int packetSize = discoveryUdp.parsePacket();
-    if (packetSize > 0) {
-      char buf[128];
-      int len = discoveryUdp.read(buf, sizeof(buf) - 1);
-      if (len > 0) {
-        buf[len] = 0;
-        String msg(buf);
-        if (msg.startsWith("TUTORBOT_PC:")) {
-          String rest = msg.substring(strlen("TUTORBOT_PC:"));
-          int sep = rest.lastIndexOf(':');
-          if (sep > 0) {
-            String ip = rest.substring(0, sep);
-            String port = rest.substring(sep + 1);
-            pcBaseUrl = "http://" + ip + ":" + port;
-            Serial.print("Discovered TutorBot PC server: ");
-            Serial.println(pcBaseUrl);
-            pcServerDiscovered = true;
-            return true;
-          }
-        }
-      }
-    }
-    delay(50);
-  }
-  return false;
-}
+String pcBaseUrl = "http://tutorbot.local:5000";
 
 WebServer server(80);
 
@@ -136,8 +127,13 @@ String pcUrl(const char* path) {
   return base + path;
 }
 
-bool isHttpUrl(const String& value) {
-  return value.startsWith("http://") || value.startsWith("https://");
+// Small helper for call sites that need direct HTTPClient control (e.g.
+// handleAiChat(), which reads the response body itself to pull out the
+// reply text for chooseExpressionForReply()) instead of going through the
+// generic relayJsonPost()/relayGet() wrappers below.
+void beginRelay(HTTPClient& http, const char* pcPath, uint32_t timeoutMs) {
+  http.setTimeout(timeoutMs);
+  http.begin(pcUrl(pcPath));
 }
 
 // ---------- LED status (non-blocking blink state machine) ----------
@@ -157,6 +153,16 @@ void setLedMode(LedMode mode) {
 
 // Call every loop() iteration -- handles the actual blinking without delay().
 void serviceLedBlink() {
+  if (coolantModeActive) {
+    // Coolant mode overrides normal status LEDs entirely -- board cools
+    // down with everything off except the screen, regardless of Wi-Fi/
+    // server state underneath.
+    digitalWrite(LED_RED, LOW);
+    digitalWrite(LED_BLUE, LOW);
+    digitalWrite(LED_GREEN, LOW);
+    return;
+  }
+
   uint32_t now = millis();
   switch (currentLedMode) {
     case LED_MODE_RED:
@@ -210,24 +216,36 @@ bool checkServerHealth() {
 
 bool wifiEverConnected = false;
 uint32_t lastWifiAttempt = 0;
+const uint32_t wifiAttemptTimeoutMs = 8000;  // how long to let one network try before moving to the next
 
 // Non-blocking Wi-Fi connect: called every loop() iteration. Never blocks --
 // retries continuously in the background, same pattern as checkServerHealth().
+// Cycles through wifiNetworks[] -- if the current one hasn't connected within
+// wifiAttemptTimeoutMs, moves to the next, wrapping around forever.
 void serviceWifiConnection() {
   if (WiFi.status() == WL_CONNECTED) {
     if (!wifiEverConnected) {
       wifiEverConnected = true;
-      Serial.print("Wi-Fi connected -- ESP32 relay IP: http://");
+      Serial.print("Wi-Fi connected to \"");
+      Serial.print(wifiNetworks[currentWifiIndex].ssid);
+      Serial.print("\" -- ESP32 relay IP: http://");
       Serial.println(WiFi.localIP());
     }
     return;
   }
   uint32_t now = millis();
-  if (now - lastWifiAttempt >= 5000) {
+  if (now - lastWifiAttempt >= wifiAttemptTimeoutMs) {
     lastWifiAttempt = now;
-    Serial.println("Wi-Fi not connected -- retrying...");
+    currentWifiIndex = (currentWifiIndex + 1) % wifiNetworkCount;
+    Serial.print("Wi-Fi not connected -- trying network ");
+    Serial.print(currentWifiIndex + 1);
+    Serial.print("/");
+    Serial.print(wifiNetworkCount);
+    Serial.print(": \"");
+    Serial.print(wifiNetworks[currentWifiIndex].ssid);
+    Serial.println("\"");
     WiFi.disconnect();
-    WiFi.begin(ssid, password);
+    WiFi.begin(wifiNetworks[currentWifiIndex].ssid, wifiNetworks[currentWifiIndex].password);
   }
 }
 
@@ -290,32 +308,68 @@ void fetchStudentStats() {
   http.end();
 }
 
+void enterCoolantMode(float chipTemp, float ambientTemp) {
+  coolantModeActive = true;
+  Serial.print("WARNING: ESP32 chip is ");
+  Serial.print(chipTemp - ambientTemp, 1);
+  Serial.println("C hotter than surroundings -- entering coolant mode (LEDs off, screen sleeping).");
+  // serviceLedBlink() picks up coolantModeActive on its own next tick, but
+  // switch off immediately here too so there's no one-frame lag/flash.
+  digitalWrite(LED_RED, LOW);
+  digitalWrite(LED_BLUE, LOW);
+  digitalWrite(LED_GREEN, LOW);
+  enterSleepMode();  // Face.h: draws the sleepy face, stops idle blinking
+}
+
+void exitCoolantMode() {
+  coolantModeActive = false;
+  Serial.println("Chip-to-ambient delta back to normal -- exiting coolant mode.");
+  exitSleepMode();   // Face.h: wakes the face back up to neutral
+  updateLedStatus(); // resume normal Wi-Fi/server status LEDs right away
+}
+
 void checkTemperature() {
   float humidity = dht.readHumidity();
-  float temperature = dht.readTemperature();
+  float ambientTemp = dht.readTemperature();
 
-  if (isnan(temperature) || isnan(humidity)) {
+  if (isnan(ambientTemp) || isnan(humidity)) {
     Serial.println("DHT11 read failed!");
     return;
   }
 
-  Serial.print("Temperature: ");
-  Serial.print(temperature);
-  Serial.print("°C, Humidity: ");
+  float chipTemp = temperatureRead();  // ESP32 internal sensor (original ESP32 only)
+
+  Serial.print("Ambient: ");
+  Serial.print(ambientTemp);
+  Serial.print("C, ESP32 chip: ");
+  Serial.print(chipTemp);
+  Serial.print("C, Humidity: ");
   Serial.print(humidity);
   Serial.println("%");
 
-  if (temperature > TEMP_THRESHOLD && !serverDisabledDueToHeat) {
-    Serial.println("WARNING: Temperature too high! Disabling server to cool down...");
+  float delta = chipTemp - ambientTemp;
+  if (!coolantModeActive && delta >= COOLANT_TRIGGER_DELTA) {
+    enterCoolantMode(chipTemp, ambientTemp);
+  } else if (coolantModeActive && delta <= COOLANT_EXIT_DELTA) {
+    exitCoolantMode();
+  }
+
+  // Separate, pre-existing safety check: room/ambient air itself too hot,
+  // regardless of the chip-vs-ambient delta above. Still guards the AI
+  // relay specifically.
+  if (ambientTemp > TEMP_THRESHOLD && !serverDisabledDueToHeat) {
+    Serial.println("WARNING: Ambient temperature too high! Disabling server to cool down...");
     serverDisabledDueToHeat = true;
     serverConnected = false;
-  } else if (temperature < (TEMP_THRESHOLD - 5.0) && serverDisabledDueToHeat) {
+  } else if (ambientTemp < (TEMP_THRESHOLD - 5.0) && serverDisabledDueToHeat) {
     Serial.println("Temperature normalized. Server connection re-enabled.");
     serverDisabledDueToHeat = false;
   }
 }
 
 void updateLedStatus() {
+  if (coolantModeActive) return;  // serviceLedBlink() forces LEDs off during coolant mode
+
   if (WiFi.status() != WL_CONNECTED) {
     setLedMode(LED_MODE_RED);
     serverConnected = false;
@@ -332,20 +386,6 @@ void updateLedStatus() {
 // TFT Mouth/Face expression functions (drawMouthHappy, drawMouthThinking,
 // drawMouthSad, drawMouthNeutral, drawMouthListening, drawMouthSpeaking,
 // blink) now live in Face.h — included near the top of this file.
-
-void applyPcBaseUrl(const String& value) {
-  if (value.length() == 0) {
-    return;
-  }
-  if (!isHttpUrl(value)) {
-    pcBaseUrl = String("http://") + value + ":" + String(pcPort);
-  } else {
-    pcBaseUrl = value;
-  }
-  if (pcBaseUrl.endsWith("/")) {
-    pcBaseUrl.remove(pcBaseUrl.length() - 1);
-  }
-}
 
 void sendCorsHeaders() {
   server.sendHeader("Access-Control-Allow-Origin", "*");
@@ -436,14 +476,102 @@ void handleHealth() {
   server.send(200, "application/json", "{\"ok\":true,\"service\":\"TutorBot ESP32 relay\"}");
 }
 
+// Dynamic-length variant of extractStringField (that one takes a fixed char
+// buffer, fine for short fields like a title, but the chat reply can be
+// hundreds of characters).
+bool extractStringFieldDyn(const String& json, const char* key, String& out) {
+  String needle = String("\"") + key + "\":\"";
+  int idx = json.indexOf(needle);
+  if (idx < 0) return false;
+  idx += needle.length();
+  int end = json.indexOf('"', idx);
+  if (end < 0) return false;
+  out = json.substring(idx, end);
+  return true;
+}
+
+// Very light keyword heuristic to pick a mouth expression for the reply --
+// not real sentiment analysis, just enough to make the face feel like it's
+// actually reacting instead of doing the same animation every single time.
+void chooseExpressionForReply(const String& reply) {
+  String lower = reply;
+  lower.toLowerCase();
+  if (lower.indexOf("sorry") >= 0 || lower.indexOf("incorrect") >= 0 ||
+      lower.indexOf("error") >= 0 || lower.indexOf("mistake") >= 0 ||
+      lower.indexOf("wrong") >= 0) {
+    drawMouthSad();
+  } else if (lower.indexOf("great") >= 0 || lower.indexOf("correct") >= 0 ||
+             lower.indexOf("well done") >= 0 || lower.indexOf("nice") >= 0 ||
+             lower.indexOf("awesome") >= 0 || reply.indexOf('!') >= 0) {
+    drawMouthHappy();
+  } else {
+    drawMouthNeutral();
+  }
+  delay(350); // brief hold so the expression is actually visible before the mouth starts moving
+}
+
 void handleAiChat() {
   drawMouthListening();
   drawMouthThinking();
-  relayJsonPost("/ai-chat", 120000);
-  // Animate a brief "speaking" flourish once the reply is ready
-  for (int i = 0; i < 6; i++) {
-    drawMouthSpeaking();
-    delay(180);
+
+  if (serverDisabledDueToHeat) {
+    sendCorsHeaders();
+    server.send(503, "application/json", "{\"error\":\"Server overheating - connection disabled\"}");
+    drawMouthSad();
+    delay(350);
+    drawMouthNeutral();
+    return;
+  }
+  sendCorsHeaders();
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"Request body required\"}");
+    drawMouthNeutral();
+    return;
+  }
+  if (!wifiUp()) {
+    server.send(503, "application/json", "{\"error\":\"ESP32 is not connected to Wi-Fi\"}");
+    drawMouthSad();
+    delay(350);
+    drawMouthNeutral();
+    return;
+  }
+
+  HTTPClient http;
+  beginRelay(http, "/ai-chat", 120000);
+  http.addHeader("Content-Type", "application/json");
+  int statusCode = http.POST(server.arg("plain"));
+  String response = statusCode > 0 ? http.getString() : "";
+  http.end();
+
+  if (statusCode > 0) {
+    server.send(statusCode, "application/json", response);
+
+    String replyText;
+    if (extractStringFieldDyn(response, "response", replyText)) {
+      chooseExpressionForReply(replyText);
+      // Scale the "speaking" wave duration with reply length -- this is an
+      // approximation (the ESP32 doesn't know how long the browser's TTS
+      // will actually take to read it aloud), but it's much closer than a
+      // fixed ~1s animation regardless of a one-word vs. paragraph reply.
+      // Shorter delay between frames than before so the wave reads as
+      // continuous motion instead of visible jumps.
+      int frames = constrain((int)(replyText.length() / 6), 8, 90);
+      for (int i = 0; i < frames; i++) {
+        drawMouthSpeaking();
+        delay(80);
+      }
+    } else {
+      // Couldn't find a "response" field (e.g. a non-chat payload type) --
+      // fall back to the old brief generic flourish.
+      for (int i = 0; i < 12; i++) {
+        drawMouthSpeaking();
+        delay(90);
+      }
+    }
+  } else {
+    server.send(502, "application/json", "{\"error\":\"Could not reach TutorBot PC server\"}");
+    drawMouthSad();
+    delay(350);
   }
   drawMouthNeutral();
 }
@@ -458,6 +586,10 @@ void handleCommands() {
 
 void handleStudentStats() {
   relayGet("/student-stats", 15000);
+}
+
+void handleDictionary() {
+  relayJsonPost("/dictionary", 30000);
 }
 
 void handleEsp32SettingsGet() {
@@ -565,14 +697,19 @@ void setup() {
   // setupBluetoothSpeaker();
 
   WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
+  currentWifiIndex = 0;
+  WiFi.begin(wifiNetworks[currentWifiIndex].ssid, wifiNetworks[currentWifiIndex].password);
+  lastWifiAttempt = millis();  // so loop()'s cycling waits its full timeout before trying #2
 
-  Serial.print("Connecting to Wi-Fi");
+  Serial.print("Connecting to Wi-Fi (\"");
+  Serial.print(wifiNetworks[currentWifiIndex].ssid);
+  Serial.print("\")");
   int attempts = 0;
   // Bounded wait here just so mDNS/discovery below have a chance to run
   // immediately if Wi-Fi is quick. If it's not connected within ~8s, we
   // stop blocking and hand off to serviceWifiConnection() in loop(), which
-  // retries forever in the background instead of getting stuck here.
+  // cycles through wifiNetworks[] forever in the background instead of
+  // getting stuck here.
   while (WiFi.status() != WL_CONNECTED && attempts < 16) {
     delay(500);
     Serial.print(".");
@@ -596,12 +733,9 @@ void setup() {
     MDNS.addService("http", "tcp", 80);
   }
 
-  applyPcBaseUrl(String(customPcHost));
-
-  Serial.println("Searching for TutorBot PC server on the LAN...");
-  if (!discoverPcServer(5000)) {
-    Serial.println("Discovery failed -- using the configured custom host or fallback URL.");
-  }
+  // No discovery step needed -- Server.py advertises itself as
+  // tutorbot.local via zeroconf, and MDNS.begin() above lets this ESP32
+  // resolve that hostname whenever HTTPClient connects to pcBaseUrl.
   Serial.print("Relaying to TutorBot PC server: ");
   Serial.println(pcBaseUrl);
 
@@ -633,6 +767,9 @@ void setup() {
   server.on("/commands", HTTP_GET, handleCommands);
   server.on("/student-stats", HTTP_GET, handleStudentStats);
 
+  server.on("/dictionary", HTTP_OPTIONS, handleOptions);
+  server.on("/dictionary", HTTP_POST, handleDictionary);
+
   server.on("/esp32/settings", HTTP_GET, handleEsp32SettingsGet);
   server.on("/esp32/settings", HTTP_OPTIONS, handleOptions);
   server.on("/esp32/settings", HTTP_POST, handleEsp32SettingsPost);
@@ -661,35 +798,15 @@ void loop() {
   serviceWifiConnection();   // non-blocking, retries forever like the server check below
   serviceLedBlink();         // actually drives the blink now (was missing before)
   faceUpdate();
-  static uint8_t consecutiveHealthFailures = 0;
   if (millis() - lastServerCheck >= 5000) {
     lastServerCheck = millis();
     serverConnected = checkServerHealth();
     updateLedStatus();
-    if (serverConnected) {
-      consecutiveHealthFailures = 0;
-    } else if (wifiUp() && consecutiveHealthFailures < 255) {
-      consecutiveHealthFailures++;
-      // ~30s of failures (6 checks) while on Wi-Fi -- the PC's IP may have
-      // changed (new DHCP lease, server moved) even though we discovered it
-      // successfully before. Drop the flag so discovery gets retried below.
-      if (consecutiveHealthFailures >= 6) {
-        pcServerDiscovered = false;
-      }
-    }
-  }
-
-  // If we're on Wi-Fi but haven't got a confirmed-good server URL, retry
-  // UDP discovery periodically. Without this, a discovery window missed at
-  // boot (e.g. Wi-Fi/Server.py not fully up yet) strands the ESP32 on the
-  // unresolvable "tutorbot.all.edu.local" fallback forever, since discovery
-  // used to run exactly once in setup(). Short timeout here so it doesn't
-  // stall server.handleClient() for long; runs every 15s while unconfirmed.
-  if (wifiUp() && !pcServerDiscovered && !serverConnected) {
-    if (millis() - lastDiscoveryAttempt >= 15000) {
-      lastDiscoveryAttempt = millis();
-      Serial.println("Server not reachable -- retrying PC discovery...");
-      discoverPcServer(1500);
+    if (!serverConnected && wifiUp()) {
+      // Fixed hostname now -- if this keeps failing, it's either Server.py
+      // being down/unreachable, or tutorbot.local not resolving (mDNS
+      // issue), not a stale discovered IP -- nothing to retry-discover here.
+      Serial.println("Server health check failed -- retrying http://tutorbot.local:5000/health in 5s");
     }
   }
 
@@ -709,7 +826,9 @@ void loop() {
   }
   if (millis() - lastFaceRefresh >= 5000) {
     lastFaceRefresh = millis();
-    drawMouthNeutral();
+    if (!coolantModeActive) {
+      drawMouthNeutral();
+    }
   }
 
   delay(50);

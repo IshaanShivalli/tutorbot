@@ -67,13 +67,21 @@ body.light-theme .file-chip,
 body.light-theme .field,
 body.light-theme .bubble,
 body.light-theme .suggestion,
-body.light-theme .btn-solid,
 body.light-theme .btn-ghost,
 body.light-theme .pill,
 body.light-theme .empty-state,
 body.light-theme .suggestions,
 body.light-theme .bubble.system {
   background: rgba(255, 255, 255, 0.92);
+}
+
+/* .btn-solid and .pill.active intentionally keep their own colored gradient
+   backgrounds in light mode (not the near-white override above) -- both
+   have hardcoded white text, so putting them on a near-white background
+   made the text invisible. */
+body.light-theme .pill.active {
+  background: var(--chalk);
+  color: #fff;
 }
 
 body.light-theme .topbar {

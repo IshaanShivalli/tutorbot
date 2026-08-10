@@ -766,6 +766,41 @@ async function sendPrompt(text) {
     clearActiveChat();
     return;
   }
+  if (isCommand && /^\/(define|dictionary)\b/i.test(text.trim())) {
+    const word = text.trim().replace(/^\/(define|dictionary)\s*/i, "").trim();
+    addMessage("user", text, null, { chatId: requestChatId });
+    saveLogToHistory("command", text);
+    promptInput.value = "";
+    autoGrow();
+    if (!word) {
+      addMessage("system", "Usage: /define <word>", null, { chatId: requestChatId });
+      return;
+    }
+    setGeneratingState(true);
+    addTyping();
+    try {
+      const res = await fetch(`${ESP32_HOST}/dictionary`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ word, profile: { grade: profile.grade, subject: profile.subject } }),
+      });
+      const data = await res.json();
+      removeTyping();
+      if (data.error) {
+        addMessage("error", data.error, null, { chatId: requestChatId });
+      } else {
+        // addMessage() already speaks the text aloud when ttsEnabled, same
+        // as any other assistant reply -- no separate TTS wiring needed.
+        addMessage("assistant", `**${data.word}**\n\n${data.meaning}`, null, { chatId: requestChatId });
+      }
+    } catch (err) {
+      removeTyping();
+      addMessage("error", `Connection failed: ${err.message}`, null, { chatId: requestChatId });
+    } finally {
+      setGeneratingState(false);
+    }
+    return;
+  }
   addMessage("user", text, null, { chatId: requestChatId });
   if (isCommand) {
     saveLogToHistory("command", text);
@@ -849,6 +884,12 @@ async function sendPrompt(text) {
 
 if (stopButton) {
   stopButton.addEventListener("click", () => {
+    // Previously this only stopped the visual text reveal or the network
+    // fetch, never the actual speech -- so on phones (where the fetch often
+    // finishes before you tap Stop) the reader kept talking regardless.
+    // Cancelling here unconditionally makes Stop behave the same everywhere.
+    window.speechSynthesis?.cancel();
+
     if (activeStreamHandle) {
       // Reveal is running client-side (response already arrived) -- just
       // fast-forward to the full text instead of aborting a finished fetch.
@@ -1294,7 +1335,7 @@ function initCommandButtons() {
   buttons.forEach(btn => {
     btn.addEventListener("click", () => {
       const cmd = btn.getAttribute("data-cmd");
-      if (cmd === "/quiz" || cmd === "/search" || cmd === "/doc") {
+      if (cmd === "/quiz" || cmd === "/search" || cmd === "/doc" || cmd === "/define") {
         promptInput.value = cmd + " ";
         promptInput.focus();
         autoGrow();
