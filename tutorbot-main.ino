@@ -73,20 +73,33 @@ DHT dht(DHTPIN, DHTTYPE);
 bool serverDisabledDueToHeat = false;
 
 // ---- Coolant mode: triggered by a SUDDEN RISE in the ESP32's own chip
-// temperature relative to its surroundings, not an absolute threshold.
+// temperature relative to its NORMAL operating point -- not a fixed offset
+// from ambient. An ESP32's die runs naturally 15-30C above ambient just
+// from CPU + Wi-Fi/BT self-heating, so a flat "chip - ambient >= 2C" trigger
+// (an earlier version of this) would fire constantly and never clear --
+// that offset itself IS normal. Instead we track a slow-moving baseline of
+// the chip-vs-ambient delta while things are calm, and only trigger when
+// the current delta jumps COOLANT_TRIGGER_RISE C or more *above that
+// baseline* -- an actual spike, not the everyday offset.
+//
 // temperatureRead() (built into the ESP32 Arduino core) reads the chip's
 // internal sensor; dht.readTemperature() reads ambient air near the board.
-// If the chip is running COOLANT_TRIGGER_DELTA °C or more hotter than the
-// surrounding air, something (Wi-Fi/BT radio, regulator, sustained load) is
-// making the board itself heat up unusually -- distinct from the room just
-// being hot, which is what TEMP_THRESHOLD above already guards against.
 // NOTE: temperatureRead() only exists on the original ESP32 (not S2/S3/C3,
-// which lack this peripheral) and can read a little noisy -- that's why
-// there's hysteresis on the exit condition below, to avoid flicker right at
-// the boundary.
-#define COOLANT_TRIGGER_DELTA 2.0
-#define COOLANT_EXIT_DELTA    1.0
+// which lack this peripheral), is NOT calibrated per-chip, and reads in
+// coarse steps (a few C at a time) rather than smoothly -- treat its
+// absolute value as unreliable, only the relative change is meaningful.
+// Also: make sure the DHT11 itself isn't mounted right against the board's
+// own hot components -- if it's picking up heat radiating off the ESP32/
+// regulator rather than genuine surrounding air, "ambient" will be
+// inflated too and the whole delta calculation is compromised regardless
+// of the logic below.
+#define COOLANT_TRIGGER_RISE  2.0   // trigger when delta rises this far above baseline
+#define COOLANT_EXIT_RISE     1.0   // exit once it drops back to within this of baseline
+#define BASELINE_EMA_ALPHA    0.1   // how fast the baseline adapts to new "normal" (slow, on purpose)
+#define BASELINE_WARMUP_READS 3     // don't trigger until the baseline has settled a bit
 bool coolantModeActive = false;
+float coolantBaselineDelta = NAN;
+int coolantBaselineReads = 0;
 
 // Wi-Fi networks in priority order -- serviceWifiConnection() tries #1
 // first; if it can't connect within wifiAttemptTimeoutMs, it moves on to
@@ -308,11 +321,13 @@ void fetchStudentStats() {
   http.end();
 }
 
-void enterCoolantMode(float chipTemp, float ambientTemp) {
+void enterCoolantMode(float chipTemp, float ambientTemp, float riseFromBaseline) {
   coolantModeActive = true;
-  Serial.print("WARNING: ESP32 chip is ");
-  Serial.print(chipTemp - ambientTemp, 1);
-  Serial.println("C hotter than surroundings -- entering coolant mode (LEDs off, screen sleeping).");
+  Serial.print("WARNING: ESP32 chip temp jumped ");
+  Serial.print(riseFromBaseline, 1);
+  Serial.print("C above its normal operating point (baseline delta ");
+  Serial.print(coolantBaselineDelta, 1);
+  Serial.println("C) -- entering coolant mode (LEDs off, screen sleeping).");
   // serviceLedBlink() picks up coolantModeActive on its own next tick, but
   // switch off immediately here too so there's no one-frame lag/flash.
   digitalWrite(LED_RED, LOW);
@@ -323,7 +338,7 @@ void enterCoolantMode(float chipTemp, float ambientTemp) {
 
 void exitCoolantMode() {
   coolantModeActive = false;
-  Serial.println("Chip-to-ambient delta back to normal -- exiting coolant mode.");
+  Serial.println("Chip temp back near its normal baseline -- exiting coolant mode.");
   exitSleepMode();   // Face.h: wakes the face back up to neutral
   updateLedStatus(); // resume normal Wi-Fi/server status LEDs right away
 }
@@ -338,24 +353,45 @@ void checkTemperature() {
   }
 
   float chipTemp = temperatureRead();  // ESP32 internal sensor (original ESP32 only)
+  float delta = chipTemp - ambientTemp;
+
+  // Establish/update the "normal" chip-vs-ambient offset with a slow-moving
+  // average -- but never while already in coolant mode, or the baseline
+  // would just chase the elevated reading and the trigger could never fire
+  // again for a real event.
+  if (isnan(coolantBaselineDelta)) {
+    coolantBaselineDelta = delta;
+    coolantBaselineReads = 1;
+  } else if (!coolantModeActive) {
+    coolantBaselineDelta += BASELINE_EMA_ALPHA * (delta - coolantBaselineDelta);
+    if (coolantBaselineReads < BASELINE_WARMUP_READS) coolantBaselineReads++;
+  }
+
+  float riseFromBaseline = delta - coolantBaselineDelta;
 
   Serial.print("Ambient: ");
   Serial.print(ambientTemp);
   Serial.print("C, ESP32 chip: ");
   Serial.print(chipTemp);
-  Serial.print("C, Humidity: ");
+  Serial.print("C (delta ");
+  Serial.print(delta, 1);
+  Serial.print("C, baseline ");
+  Serial.print(coolantBaselineDelta, 1);
+  Serial.print("C, rise ");
+  Serial.print(riseFromBaseline, 1);
+  Serial.print("C), Humidity: ");
   Serial.print(humidity);
   Serial.println("%");
 
-  float delta = chipTemp - ambientTemp;
-  if (!coolantModeActive && delta >= COOLANT_TRIGGER_DELTA) {
-    enterCoolantMode(chipTemp, ambientTemp);
-  } else if (coolantModeActive && delta <= COOLANT_EXIT_DELTA) {
+  bool baselineReady = coolantBaselineReads >= BASELINE_WARMUP_READS;
+  if (!coolantModeActive && baselineReady && riseFromBaseline >= COOLANT_TRIGGER_RISE) {
+    enterCoolantMode(chipTemp, ambientTemp, riseFromBaseline);
+  } else if (coolantModeActive && riseFromBaseline <= COOLANT_EXIT_RISE) {
     exitCoolantMode();
   }
 
   // Separate, pre-existing safety check: room/ambient air itself too hot,
-  // regardless of the chip-vs-ambient delta above. Still guards the AI
+  // regardless of the chip-vs-baseline rise above. Still guards the AI
   // relay specifically.
   if (ambientTemp > TEMP_THRESHOLD && !serverDisabledDueToHeat) {
     Serial.println("WARNING: Ambient temperature too high! Disabling server to cool down...");
