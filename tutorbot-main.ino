@@ -111,10 +111,10 @@ struct WifiCred {
 };
 
 WifiCred wifiNetworks[] = {
-  { "daf6net",       "NOTYOURNET" },   // #1 -- tried first
-  { "NETWORK_2_SSID", "NETWORK_2_PASSWORD" },
-  { "NETWORK_3_SSID", "NETWORK_3_PASSWORD" },
-  { "NETWORK_4_SSID", "NETWORK_4_PASSWORD" },
+  { "daf6net", "NOTYOURNET" },   // #1 -- tried first
+  { "Presidency-WIFI", "P@$RTN1@3#5" },
+  { "Airtel-MyWiFi-AMF-311WW-13F6", "3cf57tbd" },
+  { "Oppo Home 15 2", "basavnilay" },
 };
 const int wifiNetworkCount = sizeof(wifiNetworks) / sizeof(wifiNetworks[0]);
 int currentWifiIndex = 0;
