@@ -118,3 +118,5 @@ models/
 uploads/
 downloads/
 *.pptx
+
+*.pem

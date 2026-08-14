@@ -1,15 +1,9 @@
-"""
-mDNS Responder for TutorBot PC Server
-Advertises tutorbot-server.local on the local network so ESP32 and mobile devices can discover it
-"""
-
 from zeroconf import ServiceInfo, Zeroconf
 import socket
 import time
 
 
 def get_local_ip():
-    """Get the local IP address of this PC"""
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
@@ -21,7 +15,6 @@ def get_local_ip():
 
 
 def start_mdns_server():
-    """Start mDNS responder to advertise tutorbot-server.local and tutorbot-pc.local"""
     local_ip = get_local_ip()
     print(f"Local IP detected: {local_ip}")
 
@@ -56,7 +49,7 @@ def start_mdns_server():
     print(f"Service Hostname: tutorbot-server.local / tutorbot-pc.local")
     print(f"IP Address:       {local_ip}")
     print(f"Port:             5000")
-    print(f"PC Web Access:    http://tutorbot-server.local:5000/")
+    print(f"PC Web Access:    https://tutorbot-server.local:5000/")
     print(f"ESP32 Mobile URL: http://tutorbot.local/ (hosted by ESP32)")
     print("")
     print("Press Ctrl+C to stop...")

@@ -1,71 +1,86 @@
+import base64
 import os
 from pathlib import Path
-from llama_cpp import Llama
-from PIL import Image, ImageStat
 
-from config import IMAGE_MODEL_PATH
+from llama_cpp import Llama
+from llama_cpp.llama_chat_format import MTMDChatHandler
+
+from config import IMAGE_MODEL_PATH, IMAGE_MMPROJ_PATH
 
 cpu_threads = max(1, min(4, os.cpu_count() or 2))
-vision_llm = Llama(
-    model_path=IMAGE_MODEL_PATH,
-    n_ctx=4096,
-    n_threads=cpu_threads,
-    n_batch=128,
-    n_gpu_layers=0,
-    use_mmap=True,
-    use_mlock=False,
-    verbose=False,
-)
+
+_vision_llm = None
+_vision_load_error = None
 
 
-def analyze_image_layout(image: Image.Image) -> str:
-    width, height = image.size
-    stat = ImageStat.Stat(image)
-    mean = stat.mean
-    grayscale = all(abs(mean[i] - mean[0]) < 12 for i in range(1, len(mean)))
-    aspect = width / height if height else 1
-    mode_text = "grayscale" if grayscale else "color"
+def _load_vision_model():
+    global _vision_llm, _vision_load_error
 
-    histogram = image.convert("HSV").histogram()
-    hue_values = histogram[0:256]
-    dominant_hue = hue_values.index(max(hue_values)) if sum(hue_values) else 0
-    desc = [f"Image dimensions are {width}×{height}", f"visual mode is {mode_text}", f"aspect ratio is {aspect:.2f}"]
+    if _vision_llm is not None or _vision_load_error is not None:
+        return
 
-    if dominant_hue < 43:
-        desc.append("the image has a warm hue tint")
-    elif dominant_hue < 85:
-        desc.append("the image has a greenish tint")
-    elif dominant_hue < 171:
-        desc.append("the image has a cool blue tint")
-    else:
-        desc.append("the image has a purple/red tint")
+    if not Path(IMAGE_MODEL_PATH).exists():
+        _vision_load_error = f"Vision model not found at '{IMAGE_MODEL_PATH}'."
+        return
+    if not Path(IMAGE_MMPROJ_PATH).exists():
+        _vision_load_error = (
+            f"Vision projector (mmproj) not found at '{IMAGE_MMPROJ_PATH}'. "
+            "Download the matching mmproj-*.gguf for SmolVLM-256M-Instruct "
+            "and place it there -- image analysis cannot work without it."
+        )
+        return
 
-    return ". ".join(desc) + "."
+    try:
+        chat_handler = MTMDChatHandler(clip_model_path=IMAGE_MMPROJ_PATH, verbose=False)
+        _vision_llm = Llama(
+            model_path=IMAGE_MODEL_PATH,
+            chat_handler=chat_handler,
+            n_ctx=4096,
+            n_threads=cpu_threads,
+            n_batch=128,
+            n_gpu_layers=0,
+            use_mmap=True,
+            use_mlock=False,
+            verbose=False,
+        )
+    except Exception as exc:
+        _vision_load_error = f"Failed to load vision model: {exc}"
+
+
+def _image_to_data_uri(image_path: Path) -> str:
+    ext = image_path.suffix.lower().lstrip(".") or "png"
+    if ext == "jpg":
+        ext = "jpeg"
+    with open(image_path, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode("utf-8")
+    return f"data:image/{ext};base64,{b64}"
 
 
 def describe_image(image_path: Path) -> str:
+    _load_vision_model()
+
+    if _vision_load_error:
+        return f"Image description unavailable: {_vision_load_error}"
+
     try:
-        with Image.open(image_path) as img:
-            img = img.convert("RGB")
-            width, height = img.size
-            layout_description = analyze_image_layout(img)
+        data_uri = _image_to_data_uri(Path(image_path))
 
         prompt = (
-            "You are a lightweight image analysis assistant. Based on the image features and any detected text, "
-            "describe what is shown in clear student-friendly language. Emphasize visible content and avoid guesses. "
-            "Use only observations that could be directly inferable from the image."
+            "You are a lightweight image analysis assistant. Look at the image and describe what is "
+            "actually shown, in clear student-friendly language. Mention visible objects, any readable "
+            "text, layout, and colors. Only describe what you can actually see -- do not guess at things "
+            "not visible in the image."
         )
 
-        response = vision_llm.create_chat_completion(
+        response = _vision_llm.create_chat_completion(
             messages=[
                 {"role": "system", "content": prompt},
                 {
                     "role": "user",
-                    "content": (
-                        f"Image size: {width}x{height}. "
-                        f"Summary of visual features: {layout_description} "
-                        "If the image shows text, diagrams, or objects, describe them as accurately as possible."
-                    ),
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": data_uri}},
+                        {"type": "text", "text": "Describe what is shown in this image."},
+                    ],
                 },
             ],
             max_tokens=256,

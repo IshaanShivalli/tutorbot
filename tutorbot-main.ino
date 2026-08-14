@@ -3,8 +3,10 @@
 #include <HTTPClient.h>
 #include <LittleFS.h>
 #include <ESPmDNS.h>
+#include <Preferences.h>
 #include "DHT.h"
 #include <TFT_eSPI.h>
+#include "BluetoothA2DPSource.h"
 
 // TFT Display
 TFT_eSPI tft = TFT_eSPI();
@@ -16,6 +18,46 @@ TFT_eSPI tft = TFT_eSPI();
 enum LedMode { LED_MODE_RED, LED_MODE_BLUE_BLINK, LED_MODE_GREEN_BLINK };
 
 #include "Face.h"
+
+// ========== Bluetooth speaker (BoAt Stone 170) ==========
+// Requires the "ESP32-A2DP" library by pschatzmann (Arduino Library Manager:
+// search "ESP32-A2DP"). Classic Bluetooth (A2DP) and Wi-Fi can run together
+// on the ESP32, so this doesn't interfere with the relay server above.
+//
+// NOTE: A2DP streams raw PCM audio that this sketch has to supply via
+// btAudioCallback() below. Right now it just sends silence so the speaker
+// connects and stays paired -- hook in real audio (e.g. decoded TTS PCM,
+// or samples read from a buffer/queue) inside that callback when you have
+// an audio source.
+BluetoothA2DPSource a2dp_source;
+const char* boatSpeakerName = "boAt Stone 170";
+bool boatSpeakerConnected = false;
+
+int32_t btAudioCallback(Frame* frame, int32_t frameCount) {
+  // Fill with silence by default -- replace this with real PCM samples
+  // (e.g. pop them from a ring buffer fed by your audio/TTS pipeline).
+  for (int i = 0; i < frameCount; i++) {
+    frame[i].channel1 = 0;
+    frame[i].channel2 = 0;
+  }
+  return frameCount;
+}
+
+void a2dpConnectionStateCallback(esp_a2d_connection_state_t state, void*) {
+  boatSpeakerConnected = (state == ESP_A2D_CONNECTION_STATE_CONNECTED);
+  Serial.print("boAt Stone 170 Bluetooth: ");
+  Serial.println(boatSpeakerConnected ? "connected" : "not connected");
+}
+
+void setupBluetoothSpeaker() {
+  a2dp_source.set_auto_reconnect(true);
+  a2dp_source.set_on_connection_state_changed(a2dpConnectionStateCallback);
+  // start() scans for and connects to a device advertising this name.
+  // If your speaker's Bluetooth name differs, update boatSpeakerName above.
+  a2dp_source.start(boatSpeakerName, btAudioCallback);
+  Serial.print("Searching for Bluetooth speaker: ");
+  Serial.println(boatSpeakerName);
+}
 
 // LED Pins
 #define LED_RED 25
@@ -64,17 +106,79 @@ int coolantBaselineReads = 0;
 // first; if it can't connect within wifiAttemptTimeoutMs, it moves on to
 // #2, then #3, #4, then wraps back around to #1 and keeps cycling forever.
 // Fill in your real networks here.
-struct WifiCredential {
+struct WifiCred {
   const char* ssid;
   const char* password;
 };
 
-WifiCredential wifiNetworks[] = {
-  {"Presidency-WIFI", "P@$RTN1@3#5"},
+WifiCred wifiNetworks[] = {
+  { "daf6net", "NOTYOURNET" },   // #1 -- tried first
+  { "Presidency-WIFI", "P@$RTN1@3#5" },
+  { "Airtel-MyWiFi-AMF-311WW-13F6", "3cf57tbd" },
+  { "Oppo Home 15 2", "basavnilay" },
 };
-
 const int wifiNetworkCount = sizeof(wifiNetworks) / sizeof(wifiNetworks[0]);
 int currentWifiIndex = 0;
+
+// ---------- User-entered Wi-Fi credentials (from the web UI settings) ----------
+// Saved to flash (NVS) so they survive reboots. This is tried FIRST, before
+// falling back to the hardcoded wifiNetworks[] list above. Previously the
+// web UI's SSID/password field only reached Server.py on the PC (via the
+// /esp32/settings relay) and never actually touched the ESP32's own Wi-Fi --
+// that's why typing a network in the settings page did nothing.
+Preferences wifiPrefs;
+String savedSsid = "";
+String savedPassword = "";
+bool haveSavedCredentials = false;
+bool triedSavedCredentialsThisBoot = false;
+
+void loadSavedWifiCredentials() {
+  wifiPrefs.begin("wifi", true);  // read-only
+  savedSsid = wifiPrefs.getString("ssid", "");
+  savedPassword = wifiPrefs.getString("pass", "");
+  wifiPrefs.end();
+  haveSavedCredentials = savedSsid.length() > 0;
+}
+
+void saveWifiCredentials(const String& ssid, const String& password) {
+  wifiPrefs.begin("wifi", false);  // read-write
+  wifiPrefs.putString("ssid", ssid);
+  wifiPrefs.putString("pass", password);
+  wifiPrefs.end();
+  savedSsid = ssid;
+  savedPassword = password;
+  haveSavedCredentials = ssid.length() > 0;
+}
+
+// ---------- Setup SoftAP fallback ----------
+// If neither the saved network nor any hardcoded one connects within a few
+// full cycles, start a local access point so the settings page is always
+// reachable to enter a working network -- otherwise a bad/out-of-range
+// network list bricks you out of the web UI entirely.
+const char* SETUP_AP_SSID = "TutorBot-Setup";
+const char* SETUP_AP_PASSWORD = "tutorbot123";  // 8+ chars required by WPA2
+bool setupApActive = false;
+int wifiFailedCycles = 0;
+const int WIFI_CYCLES_BEFORE_AP = 2;  // full passes through the network list
+
+void startSetupAp() {
+  if (setupApActive) return;
+  setupApActive = true;
+  WiFi.mode(WIFI_AP_STA);  // keep STA alive so it can still connect in the background
+  WiFi.softAP(SETUP_AP_SSID, SETUP_AP_PASSWORD);
+  Serial.print("SoftAP active: SSID \"");
+  Serial.print(SETUP_AP_SSID);
+  Serial.print("\", IP: http://");
+  Serial.println(WiFi.softAPIP());
+}
+
+void stopSetupAp() {
+  if (!setupApActive) return;
+  setupApActive = false;
+  WiFi.softAPdisconnect(true);
+  WiFi.mode(WIFI_STA);
+  Serial.println("SoftAP stopped -- connected to a real network now.");
+}
 
 // Server connection status
 bool serverConnected = false;
@@ -85,9 +189,7 @@ uint32_t lastServerCheck = 0;
 // zeroconf registration added there); MDNS.begin() below lets the ESP32's
 // underlying mDNS resolver look that hostname up on demand.
 const uint16_t pcPort = 5000;
-String pcBaseUrl = "http://tutorbot-server.local:5000";
-IPAddress resolvedServerIp;
-bool serverIpResolved = false;
+String pcBaseUrl = "http://tutorbot.local:5000";
 
 WebServer server(80);
 
@@ -173,54 +275,17 @@ void serviceLedBlink() {
   }
 }
 
-bool resolveServerHost() {
-  if (WiFi.status() != WL_CONNECTED) return false;
-  Serial.println("Resolving TutorBot PC server via mDNS...");
-  
-  // Try querying tutorbot-server first, then tutorbot-pc as fallback
-  IPAddress ip = MDNS.queryHost("tutorbot-server", 2000);
-  if (ip == INADDR_NONE || ip == IPAddress(0, 0, 0, 0)) {
-    ip = MDNS.queryHost("tutorbot-pc", 2000);
-  }
-  
-  if (ip != INADDR_NONE && ip != IPAddress(0, 0, 0, 0)) {
-    resolvedServerIp = ip;
-    serverIpResolved = true;
-    pcBaseUrl = "http://" + ip.toString() + ":5000";
-    Serial.print("Discovered TutorBot PC server dynamically at: ");
-    Serial.println(pcBaseUrl);
-    return true;
-  }
-  
-  return false;
-}
-
 bool checkServerHealth() {
   if (WiFi.status() != WL_CONNECTED) {
     return false;
   }
 
   HTTPClient http;
-  http.setTimeout(3500);
   http.begin(pcBaseUrl + "/health");
   int httpCode = http.GET();
   http.end();
 
-  if (httpCode == 200) {
-    return true;
-  }
-
-  // If health check failed, re-resolve via mDNS (handles dynamic DHCP IP changes)
-  if (resolveServerHost()) {
-    HTTPClient retryHttp;
-    retryHttp.setTimeout(3500);
-    retryHttp.begin(pcBaseUrl + "/health");
-    int retryCode = retryHttp.GET();
-    retryHttp.end();
-    return (retryCode == 200);
-  }
-
-  return false;
+  return (httpCode == 200);
 }
 
 bool wifiEverConnected = false;
@@ -235,17 +300,38 @@ void serviceWifiConnection() {
   if (WiFi.status() == WL_CONNECTED) {
     if (!wifiEverConnected) {
       wifiEverConnected = true;
-      Serial.print("Wi-Fi connected to \"");
-      Serial.print(wifiNetworks[currentWifiIndex].ssid);
-      Serial.print("\" -- ESP32 relay IP: http://");
+      wifiFailedCycles = 0;
+      Serial.print("Wi-Fi connected -- ESP32 relay IP: http://");
       Serial.println(WiFi.localIP());
+    }
+    if (setupApActive) {
+      stopSetupAp();
     }
     return;
   }
   uint32_t now = millis();
   if (now - lastWifiAttempt >= wifiAttemptTimeoutMs) {
     lastWifiAttempt = now;
+
+    // Try the saved (user-entered, from web UI) network first, exactly once
+    // per boot, before falling into the hardcoded list.
+    if (haveSavedCredentials && !triedSavedCredentialsThisBoot) {
+      triedSavedCredentialsThisBoot = true;
+      Serial.print("Wi-Fi not connected -- trying saved network: \"");
+      Serial.print(savedSsid);
+      Serial.println("\"");
+      WiFi.disconnect();
+      WiFi.begin(savedSsid.c_str(), savedPassword.c_str());
+      return;
+    }
+
     currentWifiIndex = (currentWifiIndex + 1) % wifiNetworkCount;
+    if (currentWifiIndex == 0) {
+      wifiFailedCycles++;
+      if (wifiFailedCycles >= WIFI_CYCLES_BEFORE_AP) {
+        startSetupAp();
+      }
+    }
     Serial.print("Wi-Fi not connected -- trying network ");
     Serial.print(currentWifiIndex + 1);
     Serial.print("/");
@@ -467,30 +553,13 @@ void relayJsonPost(const char* pcPath, uint32_t timeoutMs) {
 }
 
 void handleRoot() {
-  if (LittleFS.exists("/index.html")) {
-    File file = LittleFS.open("/index.html", "r");
-    if (file) {
-      server.streamFile(file, "text/html");
-      file.close();
-      return;
-    }
+  File file = LittleFS.open("/index.html", "r");
+  if (!file) {
+    server.send(500, "text/plain", "index.html not found");
+    return;
   }
-  String html = "<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'>"
-                "<title>TutorBot ESP32 Relay</title>"
-                "<style>body{font-family:sans-serif;background:#0a0812;color:#f5f2fa;padding:24px;text-align:center;}"
-                ".card{max-width:480px;margin:40px auto;background:#1c1830;padding:28px 24px;border-radius:18px;box-shadow:0 4px 20px rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.1);}"
-                "h1{color:#a855f7;margin-top:0;}a{color:#38bdf8;text-decoration:none;}code{background:rgba(0,0,0,0.4);padding:3px 7px;border-radius:6px;color:#f5f2fa;font-family:monospace;}"
-                ".status{margin:18px 0;padding:12px;border-radius:10px;background:rgba(0,0,0,0.3);font-size:14px;}"
-                "</style></head><body><div class='card'>"
-                "<h1>TutorBot ESP32 Relay</h1>"
-                "<p>ESP32 is online and hosting at: <br><br><code>http://tutorbot.local/</code></p>"
-                "<div class='status'>"
-                "<p>PC Server Link: <strong style='color:" + String(serverConnected ? "#10b981'>Connected" : "#ef4444'>Searching / Offline") + "</strong></p>"
-                "<p style='font-size:12px;color:#a39cb5;margin-top:6px;'>Relay Target: " + pcBaseUrl + "</p>"
-                "</div>"
-                "<p style='color:#a39cb5;font-size:13px;line-height:1.5;'>To load the full app UI, flash the <code>data/</code> folder using Arduino IDE 'ESP32 LittleFS Data Upload'.</p>"
-                "</div></body></html>";
-  server.send(200, "text/html", html);
+  server.streamFile(file, "text/html");
+  file.close();
 }
 
 void relayGet(const char* pcPath, uint32_t timeoutMs) {
@@ -633,10 +702,6 @@ void handleCommands() {
   relayGet("/commands", 15000);
 }
 
-void handleGenerateSpellWord() {
-  relayGet("/generate-spell-word", 15000);
-}
-
 void handleStudentStats() {
   relayGet("/student-stats", 15000);
 }
@@ -645,12 +710,70 @@ void handleDictionary() {
   relayJsonPost("/dictionary", 30000);
 }
 
+// These now handle Wi-Fi credentials LOCALLY on the ESP32 (save to flash +
+// actually connect) instead of just relaying the POST body to Server.py,
+// which only stored it for display and never touched this board's Wi-Fi.
 void handleEsp32SettingsGet() {
-  relayGet("/esp32/settings", 15000);
+  sendCorsHeaders();
+  String json = "{";
+  json += "\"ssid\":\"" + (haveSavedCredentials ? savedSsid : String("")) + "\",";
+  json += "\"connected\":" + String(WiFi.status() == WL_CONNECTED ? "true" : "false") + ",";
+  json += "\"current_ssid\":\"" + (WiFi.status() == WL_CONNECTED ? WiFi.SSID() : String("")) + "\",";
+  json += "\"ip\":\"" + (WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : String("")) + "\",";
+  json += "\"setup_ap_active\":" + String(setupApActive ? "true" : "false");
+  json += "}";
+  server.send(200, "application/json", json);
 }
 
 void handleEsp32SettingsPost() {
-  relayJsonPost("/esp32/settings", 15000);
+  sendCorsHeaders();
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"Request body required\"}");
+    return;
+  }
+
+  String body = server.arg("plain");
+  String newSsid, newPassword;
+  bool haveSsid = extractStringFieldDyn(body, "ssid", newSsid);
+  extractStringFieldDyn(body, "password", newPassword);  // password may legitimately be empty
+
+  if (!haveSsid || newSsid.length() == 0) {
+    server.send(400, "application/json", "{\"error\":\"ssid is required\"}");
+    return;
+  }
+
+  Serial.print("Saving new Wi-Fi credentials from web UI: \"");
+  Serial.print(newSsid);
+  Serial.println("\"");
+  saveWifiCredentials(newSsid, newPassword);
+  triedSavedCredentialsThisBoot = false;  // force serviceWifiConnection() to retry with the new ones
+
+  // Attempt to connect right away so the response can report success/failure,
+  // rather than making the user wait for the next background retry cycle.
+  WiFi.disconnect();
+  WiFi.begin(newSsid.c_str(), newPassword.c_str());
+  uint32_t start = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - start < 10000) {
+    delay(250);
+  }
+  triedSavedCredentialsThisBoot = true;
+
+  bool connected = (WiFi.status() == WL_CONNECTED);
+  if (connected && setupApActive) {
+    stopSetupAp();
+  }
+
+  String json = "{";
+  json += "\"ok\":" + String(connected ? "true" : "false") + ",";
+  json += "\"ssid\":\"" + newSsid + "\",";
+  json += "\"connected\":" + String(connected ? "true" : "false");
+  if (connected) {
+    json += ",\"ip\":\"" + WiFi.localIP().toString() + "\"";
+  } else {
+    json += ",\"note\":\"Saved -- will keep retrying in the background.\"";
+  }
+  json += "}";
+  server.send(200, "application/json", json);
 }
 
 void handleSendOtp() {
@@ -743,17 +866,32 @@ void setup() {
 
   drawMouthNeutral();
 
-  WiFi.mode(WIFI_AP_STA);
-  WiFi.softAP("TutorBot-Relay", "tutorbot123");
-  Serial.print("SoftAP active: SSID \"TutorBot-Relay\", IP: http://");
-  Serial.println(WiFi.softAPIP());
+  // Bluetooth (A2DP) temporarily disabled -- it was crashing
+  // ("assert failed: hash_map_set") when the boAt speaker connected,
+  // which rebooted the whole board and reset Wi-Fi/LED state.
+  // Re-enable once Wi-Fi is confirmed working on its own.
+  // setupBluetoothSpeaker();
 
-  currentWifiIndex = 0;
-  WiFi.begin(wifiNetworks[currentWifiIndex].ssid, wifiNetworks[currentWifiIndex].password);
-  lastWifiAttempt = millis();  // so loop()'s cycling waits its full timeout before trying #2
+  WiFi.mode(WIFI_STA);
+  loadSavedWifiCredentials();
+
+  const char* bootSsid;
+  const char* bootPassword;
+  if (haveSavedCredentials) {
+    // Prefer whatever the user typed into the web UI over the hardcoded list.
+    bootSsid = savedSsid.c_str();
+    bootPassword = savedPassword.c_str();
+    triedSavedCredentialsThisBoot = true;
+  } else {
+    currentWifiIndex = 0;
+    bootSsid = wifiNetworks[currentWifiIndex].ssid;
+    bootPassword = wifiNetworks[currentWifiIndex].password;
+  }
+  WiFi.begin(bootSsid, bootPassword);
+  lastWifiAttempt = millis();  // so loop()'s cycling waits its full timeout before trying the next one
 
   Serial.print("Connecting to Wi-Fi (\"");
-  Serial.print(wifiNetworks[currentWifiIndex].ssid);
+  Serial.print(bootSsid);
   Serial.print("\")");
   int attempts = 0;
   // Bounded wait here just so mDNS/discovery below have a chance to run
@@ -776,19 +914,17 @@ void setup() {
     Serial.println("Wi-Fi not connected yet -- will keep retrying continuously in the background.");
   }
 
-  // mDNS hostnames must be a single label -- no dots.
-  // ESP32 hosts the web relay interface at http://tutorbot.local:80
-  if (!MDNS.begin("tutorbot")) {
+  if (!MDNS.begin("tutorbot.edu")) {
     Serial.println("Error setting up mDNS");
   } else {
     Serial.println("mDNS responder started");
-    Serial.println("Access ESP32 at: http://tutorbot.local/");
+    Serial.println("Access ESP32 at: http://tutorbot.edu.local/");
     MDNS.addService("http", "tcp", 80);
-    MDNS.addServiceTxt("http", "tcp", "path", "/");
   }
 
-  // Dynamically resolve the PC server IP on the network
-  resolveServerHost();
+  // No discovery step needed -- Server.py advertises itself as
+  // tutorbot.local via zeroconf, and MDNS.begin() above lets this ESP32
+  // resolve that hostname whenever HTTPClient connects to pcBaseUrl.
   Serial.print("Relaying to TutorBot PC server: ");
   Serial.println(pcBaseUrl);
 
@@ -818,10 +954,6 @@ void setup() {
   server.on("/clear", HTTP_POST, handleClear);
 
   server.on("/commands", HTTP_GET, handleCommands);
-  server.on("/generate-spell-word", HTTP_GET, handleGenerateSpellWord);
-  server.on("/generate-spell-word", HTTP_OPTIONS, handleOptions);
-  server.on("/api/spell-word", HTTP_GET, handleGenerateSpellWord);
-  server.on("/api/spell-word", HTTP_OPTIONS, handleOptions);
   server.on("/student-stats", HTTP_GET, handleStudentStats);
 
   server.on("/dictionary", HTTP_OPTIONS, handleOptions);
@@ -860,9 +992,10 @@ void loop() {
     serverConnected = checkServerHealth();
     updateLedStatus();
     if (!serverConnected && wifiUp()) {
-      Serial.print("Server health check failed -- retrying ");
-      Serial.print(pcBaseUrl);
-      Serial.println("/health in 5s");
+      // Fixed hostname now -- if this keeps failing, it's either Server.py
+      // being down/unreachable, or tutorbot.local not resolving (mDNS
+      // issue), not a stale discovered IP -- nothing to retry-discover here.
+      Serial.println("Server health check failed -- retrying http://tutorbot.local:5000/health in 5s");
     }
   }
 

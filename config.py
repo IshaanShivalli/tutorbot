@@ -1,5 +1,6 @@
 MODEL_PATH ="models/qwen2.5-0.5b-instruct-q4_k_m.gguf"
 IMAGE_MODEL_PATH ="models/SmolVLM-256M-Instruct-Q8_0.gguf"
+IMAGE_MMPROJ_PATH ="models/mmproj-SmolVLM-256M-Instruct-Q8_0.gguf"
 EMAIL_FROM ="no-reply@tutorbot.com"
 SMTP_SERVER ="smtp.gmail.com"
 SMTP_PORT =587
