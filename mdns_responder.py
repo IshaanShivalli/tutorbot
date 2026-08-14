@@ -1,11 +1,12 @@
 """
-mDNS Responder for TutorBot
-Advertises tutorbot.all.edu on the local network so mobile devices can access it
+mDNS Responder for TutorBot PC Server
+Advertises tutorbot-server.local on the local network so ESP32 and mobile devices can discover it
 """
 
 from zeroconf import ServiceInfo, Zeroconf
 import socket
 import time
+
 
 def get_local_ip():
     """Get the local IP address of this PC"""
@@ -18,36 +19,49 @@ def get_local_ip():
     except Exception:
         return "127.0.0.1"
 
+
 def start_mdns_server():
-    """Start mDNS responder to advertise tutorbot.all.edu"""
+    """Start mDNS responder to advertise tutorbot-server.local and tutorbot-pc.local"""
     local_ip = get_local_ip()
     print(f"Local IP detected: {local_ip}")
-    
-    # Create service info
+
+    zeroconf = Zeroconf()
+
     service_info = ServiceInfo(
         "_http._tcp.local.",
-        "TutorBot._http._tcp.local.",
+        "TutorBot-Server._http._tcp.local.",
         addresses=[socket.inet_aton(local_ip)],
         port=5000,
         properties={"path": "/"},
-        server="tutorbot.all.edu.local.",
+        server="tutorbot-server.local.",
     )
-    
-    # Register service
-    zeroconf = Zeroconf()
     zeroconf.register_service(service_info)
-    
+
+    try:
+        service_info_pc = ServiceInfo(
+            "_http._tcp.local.",
+            "TutorBot-PC._http._tcp.local.",
+            addresses=[socket.inet_aton(local_ip)],
+            port=5000,
+            properties={"path": "/"},
+            server="tutorbot-pc.local.",
+        )
+        zeroconf.register_service(service_info_pc)
+    except Exception as exc:
+        print(f"Secondary mDNS info: {exc}")
+
     print("=" * 60)
-    print("✅ mDNS Responder Started")
+    print("✅ TutorBot mDNS Responder Started")
     print("=" * 60)
-    print(f"Service: tutorbot.all.edu.local")
-    print(f"IP Address: {local_ip}")
-    print(f"Port: 5000")
-    print(f"Access from mobile: http://tutorbot.all.edu.local:5000/")
+    print(f"Service Hostname: tutorbot-server.local / tutorbot-pc.local")
+    print(f"IP Address:       {local_ip}")
+    print(f"Port:             5000")
+    print(f"PC Web Access:    http://tutorbot-server.local:5000/")
+    print(f"ESP32 Mobile URL: http://tutorbot.local/ (hosted by ESP32)")
     print("")
     print("Press Ctrl+C to stop...")
     print("=" * 60)
-    
+
     try:
         while True:
             time.sleep(1)
@@ -56,6 +70,7 @@ def start_mdns_server():
         zeroconf.unregister_service(service_info)
         zeroconf.close()
         print("Done!")
+
 
 if __name__ == "__main__":
     try:

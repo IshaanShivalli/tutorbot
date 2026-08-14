@@ -765,13 +765,13 @@ def ai_chat():
         return jsonify({"error": f"TutorBot model failed: {exc}"}), 500
 
 
-@app.post("/clear")
+@app.route("/clear", methods=["GET", "POST"])
 def clear_chat():
     global last_quiz_content, last_quiz_doc_content
     chat_history.clear()
     last_quiz_content = None
     last_quiz_doc_content = None
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "message": "Conversation cleared."})
 
 
 @app.post("/dictionary")
@@ -790,6 +790,181 @@ def dictionary_lookup():
         return jsonify({"ok": True, "word": word, "meaning": meaning})
     except Exception as exc:
         return jsonify({"error": f"Dictionary lookup failed: {exc}"}), 500
+
+
+EASY_SPELL_WORDS = {
+    "Grade 6": [
+        {"word": "planet", "hint": "A celestial body in space orbiting a star", "example": "Earth is our home planet."},
+        {"word": "garden", "hint": "A plot of ground where plants and flowers grow", "example": "We planted roses in the garden."},
+        {"word": "friend", "hint": "A person you know well and like", "example": "She is my best friend at school."},
+        {"word": "bridge", "hint": "A structure carrying a road across water", "example": "We walked across the golden bridge."},
+        {"word": "summer", "hint": "The warmest season of the year", "example": "I love swimming during the summer."},
+        {"word": "island", "hint": "A piece of land surrounded by water", "example": "They took a ferry to the island."},
+        {"word": "camera", "hint": "A device for taking photographs", "example": "He snapped a photo with his camera."},
+        {"word": "market", "hint": "A place where goods and food are sold", "example": "We bought fresh apples at the market."},
+        {"word": "forest", "hint": "A large area covered with trees", "example": "The deer ran into the green forest."},
+        {"word": "window", "hint": "An opening in a wall to let in light", "example": "Open the window for fresh air."},
+        {"word": "travel", "hint": "To go from one place to another", "example": "They love to travel around the world."},
+        {"word": "silver", "hint": "A shiny precious gray metal", "example": "She wore a shiny silver necklace."},
+        {"word": "animal", "hint": "A living creature that is not a plant", "example": "The elephant is a large wild animal."},
+    ],
+    "Grade 7": [
+        {"word": "balance", "hint": "An even distribution of weight or stability", "example": "He kept his balance on the beam."},
+        {"word": "climate", "hint": "The weather conditions prevailing in an area", "example": "The tropical climate is warm and sunny."},
+        {"word": "courage", "hint": "The ability to do something that frightens one", "example": "It took courage to speak in front of everyone."},
+        {"word": "history", "hint": "The study of past events", "example": "We learned about ancient history today."},
+        {"word": "journey", "hint": "An act of traveling from one place to another", "example": "Their journey lasted three days."},
+        {"word": "library", "hint": "A building containing books for reading", "example": "I borrowed three books from the library."},
+        {"word": "pattern", "hint": "A repeated decorative design or sequence", "example": "The fabric had a checkered pattern."},
+        {"word": "science", "hint": "The study of the natural world through observation", "example": "Biology is a fascinating branch of science."},
+        {"word": "station", "hint": "A place where trains or buses stop", "example": "We waited for the train at the station."},
+        {"word": "weather", "hint": "The state of the atmosphere at a time and place", "example": "The weather forecast predicts sunshine."},
+    ],
+    "Grade 8": [
+        {"word": "capture", "hint": "To take into one's possession by force or skill", "example": "The photographer managed to capture the sunset."},
+        {"word": "culture", "hint": "The arts and customs of a particular nation or people", "example": "Music is a vital part of every culture."},
+        {"word": "explore", "hint": "To travel through an unfamiliar area to learn about it", "example": "The team set out to explore the cave."},
+        {"word": "horizon", "hint": "The line at which the earth's surface and the sky meet", "example": "The sun dipped below the ocean horizon."},
+        {"word": "machine", "hint": "An apparatus using mechanical power to perform work", "example": "The washing machine cleaned our clothes quickly."},
+        {"word": "measure", "hint": "To ascertain the size, amount, or degree of something", "example": "Use a ruler to measure the length."},
+        {"word": "natural", "hint": "Existing in or caused by nature; not artificial", "example": "Honey is a natural sweetener."},
+        {"word": "observe", "hint": "To notice or perceive something carefully", "example": "Astronomers observe the stars through telescopes."},
+        {"word": "project", "hint": "An individual or collaborative enterprise", "example": "Our science project won first prize."},
+        {"word": "surface", "hint": "The outside part or uppermost layer of something", "example": "Leaves floated on the water's surface."},
+    ],
+    "Grade 9": [
+        {"word": "advance", "hint": "To move forward in a purposeful way", "example": "Technological advance has changed our daily lives."},
+        {"word": "concept", "hint": "An abstract idea or general notion", "example": "Gravity is a fundamental concept in physics."},
+        {"word": "develop", "hint": "To grow or cause to grow and become more mature", "example": "Students develop strong problem-solving skills."},
+        {"word": "element", "hint": "An essential part or aspect of something", "example": "Trust is a key element in friendship."},
+        {"word": "feature", "hint": "A distinctive attribute or aspect of something", "example": "The phone's main feature is its high-res camera."},
+        {"word": "general", "hint": "Affecting or concerning all or most people", "example": "There is a general agreement on the plan."},
+        {"word": "improve", "hint": "To make or become better", "example": "Daily practice will improve your spelling."},
+        {"word": "justice", "hint": "Just behavior or treatment; fairness", "example": "Courts uphold law and justice for all."},
+        {"word": "network", "hint": "An interconnected group or system", "example": "Computers are linked through a global network."},
+        {"word": "opinion", "hint": "A view or judgment formed about something", "example": "Everyone is entitled to their own opinion."},
+        {"word": "process", "hint": "A series of actions or steps taken to achieve an end", "example": "Photosynthesis is a vital natural process."},
+        {"word": "quality", "hint": "The standard of something as measured against other things", "example": "We prioritize quality over quantity."},
+    ],
+    "Grade 10": [
+        {"word": "benefit", "hint": "An advantage or profit gained from something", "example": "Exercise provides great benefit to your health."},
+        {"word": "connect", "hint": "To bring together or into contact", "example": "The bridge will connect the two islands."},
+        {"word": "discuss", "hint": "To talk about something with another person", "example": "Let us discuss our project ideas together."},
+        {"word": "example", "hint": "A thing characteristic of its kind, illustrating a rule", "example": "Can you give an example of a mammal?"},
+        {"word": "graphic", "hint": "Relating to visual art, especially illustration", "example": "The textbook features clear graphic diagrams."},
+        {"word": "medical", "hint": "Relating to the science or practice of medicine", "example": "She wants to pursue a medical career."},
+        {"word": "popular", "hint": "Liked, admired, or enjoyed by many people", "example": "Football is a popular sport worldwide."},
+        {"word": "routine", "hint": "A sequence of actions regularly followed", "example": "Morning exercise is part of my daily routine."},
+        {"word": "similar", "hint": "Resembling without being identical", "example": "The two paintings look very similar."},
+        {"word": "support", "hint": "To give assistance, comfort, or approval to", "example": "Friends always support each other."},
+    ],
+    "Grade 11": [
+        {"word": "analysis", "hint": "Detailed examination of the elements or structure of something", "example": "Data analysis revealed interesting trends."},
+        {"word": "category", "hint": "A class or division of people or things with shared characteristics", "example": "Whales fall into the mammal category."},
+        {"word": "creative", "hint": "Relating to or involving the imagination or original ideas", "example": "She has a creative approach to art."},
+        {"word": "describe", "hint": "To give an account in words of someone or something", "example": "Please describe what happened in the story."},
+        {"word": "economic", "hint": "Relating to the economy or production of wealth", "example": "Trade boosts national economic growth."},
+        {"word": "function", "hint": "An activity or purpose natural to a person or thing", "example": "The function of the heart is to pump blood."},
+        {"word": "material", "hint": "The matter from which a thing is or can be made", "example": "Wood is a common construction material."},
+        {"word": "positive", "hint": "Expressing or showing optimism and constructive confidence", "example": "A positive attitude helps in overcoming challenges."},
+        {"word": "specific", "hint": "Clearly defined or identified", "example": "Is there a specific topic you want to study?"},
+        {"word": "standard", "hint": "A level of quality or attainment used as a measure", "example": "The school maintains high academic standards."},
+    ],
+    "Grade 12": [
+        {"word": "academic", "hint": "Relating to education and scholarship", "example": "He received an award for academic excellence."},
+        {"word": "critical", "hint": "Expressing analysis or forming important evaluations", "example": "Critical thinking is essential in science."},
+        {"word": "evaluate", "hint": "To form an idea of the amount, number, or value of something", "example": "Judges will evaluate each performance."},
+        {"word": "generate", "hint": "To cause something to arise or come into being", "example": "Solar panels generate clean electrical energy."},
+        {"word": "instance", "hint": "An example or single occurrence of something", "example": "For instance, birds can fly long distances."},
+        {"word": "maintain", "hint": "To cause or enable a condition or state of affairs to continue", "example": "It is important to maintain good study habits."},
+        {"word": "overview", "hint": "A general review or summary of a subject", "example": "The teacher gave an overview of the chapter."},
+        {"word": "priority", "hint": "The fact or condition of being regarded as more important", "example": "Safety is our number one priority."},
+        {"word": "resource", "hint": "A supply of materials, money, or staff", "example": "The internet is a vast educational resource."},
+        {"word": "strategy", "hint": "A plan of action designed to achieve a major aim", "example": "We need an effective study strategy for exams."},
+    ],
+    "College": [
+        {"word": "adaptive", "hint": "Able to adjust to new conditions or environments", "example": "Smart software has adaptive learning algorithms."},
+        {"word": "coherent", "hint": "Logical and consistent; easy to understand", "example": "Her essay presented a clear and coherent argument."},
+        {"word": "dialogue", "hint": "Conversation between two or more people", "example": "Constructive dialogue resolves misunderstandings."},
+        {"word": "emphasis", "hint": "Special importance, value, or prominence given to something", "example": "The course places strong emphasis on practical skills."},
+        {"word": "flexible", "hint": "Capable of bending easily without breaking; adaptable", "example": "We have flexible schedules for group study."},
+        {"word": "guidance", "hint": "Advice or information aimed at resolving a problem", "example": "Teachers provide valuable academic guidance."},
+        {"word": "moderate", "hint": "Average in amount, intensity, quality, or degree", "example": "Exercise at a moderate pace for best results."},
+        {"word": "parallel", "hint": "Side by side and having the same distance continuously between them", "example": "Train tracks run parallel to the highway."},
+        {"word": "reliable", "hint": "Consistently good in quality or performance; trustworthy", "example": "He is a reliable partner for group projects."},
+        {"word": "validate", "hint": "To check or prove the validity or accuracy of something", "example": "Scientists run experiments to validate the theory."},
+    ],
+    "Adult": [
+        {"word": "advocate", "hint": "A person who publicly supports or recommends a particular cause", "example": "She is a strong advocate for public libraries."},
+        {"word": "capacity", "hint": "The maximum amount that something can contain or produce", "example": "The stadium has a seating capacity of fifty thousand."},
+        {"word": "database", "hint": "A structured set of data held in a computer", "example": "The library database organizes all catalog records."},
+        {"word": "feedback", "hint": "Information about reactions to a product or a person's performance", "example": "Constructive feedback helps students improve."},
+        {"word": "gradient", "hint": "An inclined part of a road, or a smooth transition of color", "example": "The app interface uses a stylish purple gradient."},
+        {"word": "heritage", "hint": "Property or traditions that are or may be inherited", "example": "We take pride in our rich cultural heritage."},
+        {"word": "momentum", "hint": "The quantity of motion of a moving body, or driving power", "example": "Our study group gained great momentum this semester."},
+        {"word": "optimize", "hint": "To make the best or most effective use of a situation or resource", "example": "Developers optimize code for faster loading speeds."},
+        {"word": "platform", "hint": "A raised level surface, or a standard computing environment", "example": "TutorBot is an interactive learning platform."},
+        {"word": "workflow", "hint": "The sequence of processes through which a piece of work passes", "example": "A clear workflow makes group projects easier."},
+    ],
+}
+
+
+def generate_ai_spell_word(grade: str = "Grade 9", difficulty: str = "easy") -> dict:
+    grade = grade or "Grade 9"
+    difficulty = difficulty or "easy"
+    grade_words = EASY_SPELL_WORDS.get(grade) or EASY_SPELL_WORDS["Grade 9"]
+    fallback_item = random.choice(grade_words)
+
+    prompt = (
+        f"Generate one student-friendly English spelling practice word suitable for {grade} level. "
+        f"Difficulty: {difficulty}. The word must be an everyday, practical, easy-to-spell vocabulary word "
+        "between 4 and 8 letters long (e.g. 'planet', 'bridge', 'friend', 'market', 'balance', 'journey'). "
+        "Avoid obscure, archaic, or excessively difficult words. "
+        "Output ONLY a single valid JSON object in this exact format with no extra text:\n"
+        '{"word": "example", "hint": "A short, simple clue or meaning of the word", "example": "A simple sentence using the word."}'
+    )
+
+    try:
+        raw_reply = tutorbot_reply(prompt, language="English", max_tokens=150)
+        json_match = re.search(r"\{[\s\S]*\}", raw_reply)
+        if json_match:
+            data = json.loads(json_match.group(0))
+            word = str(data.get("word") or "").strip().lower()
+            hint = str(data.get("hint") or "").strip()
+            example = str(data.get("example") or "").strip()
+            word = re.sub(r"[^a-zA-Z]", "", word)
+            if 3 <= len(word) <= 12 and word.isalpha():
+                return {
+                    "ok": True,
+                    "word": word,
+                    "hint": hint or fallback_item["hint"],
+                    "example": example or fallback_item["example"],
+                    "grade": grade,
+                    "difficulty": difficulty,
+                    "source": "ai",
+                }
+    except Exception as exc:
+        print(f"[SpellGen] AI spell generation fallback: {exc}")
+
+    return {
+        "ok": True,
+        "word": fallback_item["word"],
+        "hint": fallback_item["hint"],
+        "example": fallback_item["example"],
+        "grade": grade,
+        "difficulty": difficulty,
+        "source": "curated",
+    }
+
+
+@app.route("/generate-spell-word", methods=["GET", "POST"])
+@app.route("/api/spell-word", methods=["GET", "POST"])
+def api_generate_spell_word():
+    data = _read_request_data() if request.method == "POST" else request.args.to_dict()
+    grade = str(data.get("grade") or "Grade 9").strip()
+    difficulty = str(data.get("difficulty") or "easy").strip()
+    result = generate_ai_spell_word(grade=grade, difficulty=difficulty)
+    return jsonify(result)
 
 
 @app.get("/esp32/settings")
@@ -963,24 +1138,15 @@ def handle_not_found(error):
     return send_from_directory(WEB_DIR, "index.html")
 
 
-
-@app.errorhandler(404)
-def handle_not_found(error):
-    path = request.path if request else "unknown"
-    if path.startswith("/api/"):
-        return jsonify({"error": f"Endpoint not found: {path}", "path": path}), 404
-    return send_from_directory(WEB_DIR, "index.html")
-
-
-# ---- mDNS: advertise this PC as tutorbot.local ----------------------------
-# The ESP32 now hits a fixed http://tutorbot.local:5000 -- no broadcast
-# discovery, no hardcoded IP to update by hand when DHCP hands out a new
-# lease. This publishes an mDNS A-record for "tutorbot.local" pointing at
-# whatever this machine's current LAN IP is, every time the server starts.
+# ---- mDNS: advertise this PC as tutorbot-server.local ---------------------
+# The ESP32 hosts the primary mobile interface at http://tutorbot.local:80.
+# This PC server advertises itself as tutorbot-server.local:5000 so the
+# ESP32 and mobile clients can reliably find it dynamically across networks
+# without IP configuration or mDNS collisions.
 #
 # Requires: pip install zeroconf
 SERVER_PORT = 5000
-MDNS_HOSTNAME = "tutorbot.local."
+MDNS_HOSTNAME = "tutorbot-server.local."
 
 
 def get_local_ip():
@@ -999,16 +1165,31 @@ def start_mdns():
     from zeroconf import Zeroconf, ServiceInfo
 
     ip = get_local_ip()
-    info = ServiceInfo(
+    zc = Zeroconf()
+
+    info_server = ServiceInfo(
         "_http._tcp.local.",
-        "TutorBot._http._tcp.local.",
+        "TutorBot-Server._http._tcp.local.",
         addresses=[socket.inet_aton(ip)],
         port=SERVER_PORT,
-        server=MDNS_HOSTNAME,
+        server="tutorbot-server.local.",
     )
-    zc = Zeroconf()
-    zc.register_service(info)
-    print(f"mDNS: advertising {MDNS_HOSTNAME} -> {ip}:{SERVER_PORT}")
+    zc.register_service(info_server)
+    print(f"mDNS: advertising tutorbot-server.local -> {ip}:{SERVER_PORT}")
+
+    try:
+        info_pc = ServiceInfo(
+            "_http._tcp.local.",
+            "TutorBot-PC._http._tcp.local.",
+            addresses=[socket.inet_aton(ip)],
+            port=SERVER_PORT,
+            server="tutorbot-pc.local.",
+        )
+        zc.register_service(info_pc)
+        print(f"mDNS: advertising tutorbot-pc.local -> {ip}:{SERVER_PORT}")
+    except Exception as exc:
+        print(f"mDNS: secondary registration note: {exc}")
+
     return zc  # keep a reference alive for the life of the process
 
 
@@ -1017,7 +1198,7 @@ if __name__ == "__main__":
         _zeroconf_handle = start_mdns()
     except ImportError:
         print("mDNS: 'zeroconf' package not installed -- run: pip install zeroconf")
-        print("mDNS: tutorbot.local will NOT resolve until this is installed.")
+        print("mDNS: tutorbot-server.local will NOT resolve until this is installed.")
     print("TutorBot server running at http://0.0.0.0:5000/")
     run_simple("0.0.0.0", 5000, app, threaded=True, use_reloader=False)
     

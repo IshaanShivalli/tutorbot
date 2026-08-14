@@ -1,0 +1,36 @@
+Ishaan-
+“Imagine a student is studying at home and gets stuck on a question. There’s no teacher immediately available, and searching the internet often gives them too much information without actually teaching them.”
+
+Pranav-
+“That’s why we built Tutor Bot, an AI teacher that provides personalized, interactive learning support whenever the student needs it.”
+
+Samanyu-
+It doesn't just give answers — it explains the concept.
+It can adjust explanations based on the student's level.
+It helps students learn at their own pace.
+
+Aarav-
+Students can ask follow-up questions, just like with a real teacher.
+It can give examples, hints, and practice questions.
+
+Ishaan-
+“Let's say I'm a student learning algebra. I don't understand how to solve this equation.”
+
+Samanyu-
+“I still don't understand. Can you explain it like I'm a beginner?”
+
+
+Aarav-
+“Give me a similar question to practice.”
+
+Pranav-
+“Our goal isn't to build an AI that gives students answers. Our goal is to build an AI that helps students understand why the answer is correct.”
+
+ “Why is this useful?”
+
+“A human teacher can't be available to every student 24/7. Tutor Bot acts as an always-available learning companion, while still encouraging the student to understand the concept rather than simply copy an answer.It can also be used when the student has a low wifi latency.”
+
+“Why should we choose your project?”
+
+“Because we're not trying to replace teachers. We're trying to make personalized learning accessible whenever a student needs help.”
+

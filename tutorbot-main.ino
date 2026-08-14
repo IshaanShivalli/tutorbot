@@ -5,7 +5,6 @@
 #include <ESPmDNS.h>
 #include "DHT.h"
 #include <TFT_eSPI.h>
-#include "BluetoothA2DPSource.h"
 
 // TFT Display
 TFT_eSPI tft = TFT_eSPI();
@@ -17,46 +16,6 @@ TFT_eSPI tft = TFT_eSPI();
 enum LedMode { LED_MODE_RED, LED_MODE_BLUE_BLINK, LED_MODE_GREEN_BLINK };
 
 #include "Face.h"
-
-// ========== Bluetooth speaker (BoAt Stone 170) ==========
-// Requires the "ESP32-A2DP" library by pschatzmann (Arduino Library Manager:
-// search "ESP32-A2DP"). Classic Bluetooth (A2DP) and Wi-Fi can run together
-// on the ESP32, so this doesn't interfere with the relay server above.
-//
-// NOTE: A2DP streams raw PCM audio that this sketch has to supply via
-// btAudioCallback() below. Right now it just sends silence so the speaker
-// connects and stays paired -- hook in real audio (e.g. decoded TTS PCM,
-// or samples read from a buffer/queue) inside that callback when you have
-// an audio source.
-BluetoothA2DPSource a2dp_source;
-const char* boatSpeakerName = "boAt Stone 170";
-bool boatSpeakerConnected = false;
-
-int32_t btAudioCallback(Frame* frame, int32_t frameCount) {
-  // Fill with silence by default -- replace this with real PCM samples
-  // (e.g. pop them from a ring buffer fed by your audio/TTS pipeline).
-  for (int i = 0; i < frameCount; i++) {
-    frame[i].channel1 = 0;
-    frame[i].channel2 = 0;
-  }
-  return frameCount;
-}
-
-void a2dpConnectionStateCallback(esp_a2d_connection_state_t state, void*) {
-  boatSpeakerConnected = (state == ESP_A2D_CONNECTION_STATE_CONNECTED);
-  Serial.print("boAt Stone 170 Bluetooth: ");
-  Serial.println(boatSpeakerConnected ? "connected" : "not connected");
-}
-
-void setupBluetoothSpeaker() {
-  a2dp_source.set_auto_reconnect(true);
-  a2dp_source.set_on_connection_state_changed(a2dpConnectionStateCallback);
-  // start() scans for and connects to a device advertising this name.
-  // If your speaker's Bluetooth name differs, update boatSpeakerName above.
-  a2dp_source.start(boatSpeakerName, btAudioCallback);
-  Serial.print("Searching for Bluetooth speaker: ");
-  Serial.println(boatSpeakerName);
-}
 
 // LED Pins
 #define LED_RED 25
@@ -105,17 +64,15 @@ int coolantBaselineReads = 0;
 // first; if it can't connect within wifiAttemptTimeoutMs, it moves on to
 // #2, then #3, #4, then wraps back around to #1 and keeps cycling forever.
 // Fill in your real networks here.
-struct WifiCred {
+struct WifiCredential {
   const char* ssid;
   const char* password;
 };
 
-WifiCred wifiNetworks[] = {
-  { "daf6net", "NOTYOURNET" },   // #1 -- tried first
-  { "Presidency-WIFI", "P@$RTN1@3#5" },
-  { "Airtel-MyWiFi-AMF-311WW-13F6", "3cf57tbd" },
-  { "Oppo Home 15 2", "basavnilay" },
+WifiCredential wifiNetworks[] = {
+  {"Presidency-WIFI", "P@$RTN1@3#5"},
 };
+
 const int wifiNetworkCount = sizeof(wifiNetworks) / sizeof(wifiNetworks[0]);
 int currentWifiIndex = 0;
 
@@ -128,7 +85,9 @@ uint32_t lastServerCheck = 0;
 // zeroconf registration added there); MDNS.begin() below lets the ESP32's
 // underlying mDNS resolver look that hostname up on demand.
 const uint16_t pcPort = 5000;
-String pcBaseUrl = "http://tutorbot.local:5000";
+String pcBaseUrl = "http://tutorbot-server.local:5000";
+IPAddress resolvedServerIp;
+bool serverIpResolved = false;
 
 WebServer server(80);
 
@@ -214,17 +173,54 @@ void serviceLedBlink() {
   }
 }
 
+bool resolveServerHost() {
+  if (WiFi.status() != WL_CONNECTED) return false;
+  Serial.println("Resolving TutorBot PC server via mDNS...");
+  
+  // Try querying tutorbot-server first, then tutorbot-pc as fallback
+  IPAddress ip = MDNS.queryHost("tutorbot-server", 2000);
+  if (ip == INADDR_NONE || ip == IPAddress(0, 0, 0, 0)) {
+    ip = MDNS.queryHost("tutorbot-pc", 2000);
+  }
+  
+  if (ip != INADDR_NONE && ip != IPAddress(0, 0, 0, 0)) {
+    resolvedServerIp = ip;
+    serverIpResolved = true;
+    pcBaseUrl = "http://" + ip.toString() + ":5000";
+    Serial.print("Discovered TutorBot PC server dynamically at: ");
+    Serial.println(pcBaseUrl);
+    return true;
+  }
+  
+  return false;
+}
+
 bool checkServerHealth() {
   if (WiFi.status() != WL_CONNECTED) {
     return false;
   }
 
   HTTPClient http;
+  http.setTimeout(3500);
   http.begin(pcBaseUrl + "/health");
   int httpCode = http.GET();
   http.end();
 
-  return (httpCode == 200);
+  if (httpCode == 200) {
+    return true;
+  }
+
+  // If health check failed, re-resolve via mDNS (handles dynamic DHCP IP changes)
+  if (resolveServerHost()) {
+    HTTPClient retryHttp;
+    retryHttp.setTimeout(3500);
+    retryHttp.begin(pcBaseUrl + "/health");
+    int retryCode = retryHttp.GET();
+    retryHttp.end();
+    return (retryCode == 200);
+  }
+
+  return false;
 }
 
 bool wifiEverConnected = false;
@@ -471,13 +467,30 @@ void relayJsonPost(const char* pcPath, uint32_t timeoutMs) {
 }
 
 void handleRoot() {
-  File file = LittleFS.open("/index.html", "r");
-  if (!file) {
-    server.send(500, "text/plain", "index.html not found");
-    return;
+  if (LittleFS.exists("/index.html")) {
+    File file = LittleFS.open("/index.html", "r");
+    if (file) {
+      server.streamFile(file, "text/html");
+      file.close();
+      return;
+    }
   }
-  server.streamFile(file, "text/html");
-  file.close();
+  String html = "<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'>"
+                "<title>TutorBot ESP32 Relay</title>"
+                "<style>body{font-family:sans-serif;background:#0a0812;color:#f5f2fa;padding:24px;text-align:center;}"
+                ".card{max-width:480px;margin:40px auto;background:#1c1830;padding:28px 24px;border-radius:18px;box-shadow:0 4px 20px rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.1);}"
+                "h1{color:#a855f7;margin-top:0;}a{color:#38bdf8;text-decoration:none;}code{background:rgba(0,0,0,0.4);padding:3px 7px;border-radius:6px;color:#f5f2fa;font-family:monospace;}"
+                ".status{margin:18px 0;padding:12px;border-radius:10px;background:rgba(0,0,0,0.3);font-size:14px;}"
+                "</style></head><body><div class='card'>"
+                "<h1>TutorBot ESP32 Relay</h1>"
+                "<p>ESP32 is online and hosting at: <br><br><code>http://tutorbot.local/</code></p>"
+                "<div class='status'>"
+                "<p>PC Server Link: <strong style='color:" + String(serverConnected ? "#10b981'>Connected" : "#ef4444'>Searching / Offline") + "</strong></p>"
+                "<p style='font-size:12px;color:#a39cb5;margin-top:6px;'>Relay Target: " + pcBaseUrl + "</p>"
+                "</div>"
+                "<p style='color:#a39cb5;font-size:13px;line-height:1.5;'>To load the full app UI, flash the <code>data/</code> folder using Arduino IDE 'ESP32 LittleFS Data Upload'.</p>"
+                "</div></body></html>";
+  server.send(200, "text/html", html);
 }
 
 void relayGet(const char* pcPath, uint32_t timeoutMs) {
@@ -620,6 +633,10 @@ void handleCommands() {
   relayGet("/commands", 15000);
 }
 
+void handleGenerateSpellWord() {
+  relayGet("/generate-spell-word", 15000);
+}
+
 void handleStudentStats() {
   relayGet("/student-stats", 15000);
 }
@@ -726,13 +743,11 @@ void setup() {
 
   drawMouthNeutral();
 
-  // Bluetooth (A2DP) temporarily disabled -- it was crashing
-  // ("assert failed: hash_map_set") when the boAt speaker connected,
-  // which rebooted the whole board and reset Wi-Fi/LED state.
-  // Re-enable once Wi-Fi is confirmed working on its own.
-  // setupBluetoothSpeaker();
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.softAP("TutorBot-Relay", "tutorbot123");
+  Serial.print("SoftAP active: SSID \"TutorBot-Relay\", IP: http://");
+  Serial.println(WiFi.softAPIP());
 
-  WiFi.mode(WIFI_STA);
   currentWifiIndex = 0;
   WiFi.begin(wifiNetworks[currentWifiIndex].ssid, wifiNetworks[currentWifiIndex].password);
   lastWifiAttempt = millis();  // so loop()'s cycling waits its full timeout before trying #2
@@ -761,17 +776,19 @@ void setup() {
     Serial.println("Wi-Fi not connected yet -- will keep retrying continuously in the background.");
   }
 
-  if (!MDNS.begin("tutorbot.edu")) {
+  // mDNS hostnames must be a single label -- no dots.
+  // ESP32 hosts the web relay interface at http://tutorbot.local:80
+  if (!MDNS.begin("tutorbot")) {
     Serial.println("Error setting up mDNS");
   } else {
     Serial.println("mDNS responder started");
-    Serial.println("Access ESP32 at: http://tutorbot.edu.local/");
+    Serial.println("Access ESP32 at: http://tutorbot.local/");
     MDNS.addService("http", "tcp", 80);
+    MDNS.addServiceTxt("http", "tcp", "path", "/");
   }
 
-  // No discovery step needed -- Server.py advertises itself as
-  // tutorbot.local via zeroconf, and MDNS.begin() above lets this ESP32
-  // resolve that hostname whenever HTTPClient connects to pcBaseUrl.
+  // Dynamically resolve the PC server IP on the network
+  resolveServerHost();
   Serial.print("Relaying to TutorBot PC server: ");
   Serial.println(pcBaseUrl);
 
@@ -801,6 +818,10 @@ void setup() {
   server.on("/clear", HTTP_POST, handleClear);
 
   server.on("/commands", HTTP_GET, handleCommands);
+  server.on("/generate-spell-word", HTTP_GET, handleGenerateSpellWord);
+  server.on("/generate-spell-word", HTTP_OPTIONS, handleOptions);
+  server.on("/api/spell-word", HTTP_GET, handleGenerateSpellWord);
+  server.on("/api/spell-word", HTTP_OPTIONS, handleOptions);
   server.on("/student-stats", HTTP_GET, handleStudentStats);
 
   server.on("/dictionary", HTTP_OPTIONS, handleOptions);
@@ -839,10 +860,9 @@ void loop() {
     serverConnected = checkServerHealth();
     updateLedStatus();
     if (!serverConnected && wifiUp()) {
-      // Fixed hostname now -- if this keeps failing, it's either Server.py
-      // being down/unreachable, or tutorbot.local not resolving (mDNS
-      // issue), not a stale discovered IP -- nothing to retry-discover here.
-      Serial.println("Server health check failed -- retrying http://tutorbot.local:5000/health in 5s");
+      Serial.print("Server health check failed -- retrying ");
+      Serial.print(pcBaseUrl);
+      Serial.println("/health in 5s");
     }
   }
 
