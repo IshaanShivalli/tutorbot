@@ -758,12 +758,15 @@ async function sendPrompt(text) {
     return;
   }
   if (!text.trim()) return;
+  const trimmed = text.trim();
+  const lowerCmd = trimmed.toLowerCase();
   const isCommand = text.startsWith("/");
   const requestChatId = activeChatId;
-  if (isCommand && text.trim() === "/clear") {
+
+  if (lowerCmd === "/clear" || lowerCmd === "clear" || lowerCmd === "/cls" || lowerCmd === "cls") {
     promptInput.value = "";
     autoGrow();
-    clearActiveChat();
+    await clearActiveChat(true);
     return;
   }
   if (isCommand && /^\/(define|dictionary)\b/i.test(text.trim())) {
@@ -956,21 +959,41 @@ function loadSuggestions() {
     .catch(() => {});
 }
 
-function clearActiveChat() {
+async function clearActiveChat(notify = true) {
+  ensureActiveChat();
   const chats = getChats();
   const chat = chats.find((item) => item.id === activeChatId);
-  if (!chat) return;
-  chat.messages = [];
-  chat.updatedAt = Date.now();
-  saveChats(chats);
+  if (chat) {
+    chat.messages = [];
+    chat.title = "New chat";
+    chat.updatedAt = Date.now();
+    saveChats(chats);
+  }
   messagesEl.innerHTML = "";
   messagesEl.appendChild(emptyState);
   emptyState.style.display = "";
   renderChatSidebar();
+
+  // Reset server-side LLM conversation memory as well
+  try {
+    const host = (window.__TUTORBOT_CONFIG__ && window.__TUTORBOT_CONFIG__.esp32Host)
+      ? window.__TUTORBOT_CONFIG__.esp32Host
+      : window.location.origin;
+    await fetch(`${host}/clear`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (err) {
+    console.warn("Could not notify server /clear:", err);
+  }
+
+  if (notify) {
+    addMessage("system", "Conversation cleared. Memory reset.", null, { skipSave: true });
+  }
 }
 
 clearButton.addEventListener("click", () => {
-  clearActiveChat();
+  clearActiveChat(true);
 });
 
 uploadMenuButton.addEventListener("click", (e) => {
@@ -1362,16 +1385,121 @@ let currentSpellWord = "";
 let spellScore = 0;
 let spellStreak = 0;
 
+// Curated easy-to-moderate, student-friendly vocabulary words with helpful clues
 const spellWordLists = {
-  "Grade 6": ["abandon", "behavior", "chronology", "dialogue", "endeavor", "fantastic", "geometry", "horizon", "influence", "journey"],
-  "Grade 7": ["accommodation", "beneficial", "characteristic", "differentiate", "enthusiasm", "fluctuation", "gullible", "hypocrisy", "impartial", "judicious"],
-  "Grade 8": ["achievement", "belligerent", "conspicuous", "deteriorate", "exaggerate", "formidable", "garrulous", "hypothesis", "inadvertent", "juxtaposition"],
-  "Grade 9": ["aesthetic", "benevolent", "cacophony", "deference", "ephemeral", "fortuitous", "gregarious", "hyperbole", "impetuous", "loquacious"],
-  "Grade 10": ["acquiesce", "capricious", "dichotomy", "equivocal", "fastidious", "harangue", "idiosyncrasy", "laconic", "obfuscate", "pragmatic"],
-  "Grade 11": ["anachronism", "camaraderie", "deleterious", "ephemeral", "facetious", "grandiloquent", "impetuous", "mendacious", "nefarious", "parsimonious"],
-  "Grade 12": ["cacophony", "chicanery", "desultory", "egregious", "fecund", "garrulous", "insidious", "mellifluous", "obsequious", "querulous"],
-  "College": ["anathema", "bilious", "crepuscular", "diaphanous", "exculpate", "hegemony", "inimical", "hubris", "paradigmatic", "surreptitious"],
-  "Adult": ["absquatulate", "bourgeoisie", "floccinaucinihilipilification", "honorificabilitudinitatibus", "sesquipedalian", "supercalifragilisticexpialidocious", "tergiversation"]
+  "Grade 6": [
+    { word: "planet", hint: "A celestial body in space orbiting a star" },
+    { word: "garden", hint: "A plot of ground where plants and flowers grow" },
+    { word: "friend", hint: "A person you know well and like" },
+    { word: "bridge", hint: "A structure carrying a road across water" },
+    { word: "summer", hint: "The warmest season of the year" },
+    { word: "island", hint: "A piece of land surrounded by water" },
+    { word: "camera", hint: "A device for taking photographs" },
+    { word: "market", hint: "A place where goods and food are sold" },
+    { word: "forest", hint: "A large area covered with trees" },
+    { word: "window", hint: "An opening in a wall to let in light" },
+    { word: "travel", hint: "To go from one place to another" },
+    { word: "silver", hint: "A shiny precious gray metal" },
+    { word: "animal", hint: "A living creature that is not a plant" }
+  ],
+  "Grade 7": [
+    { word: "balance", hint: "An even distribution of weight or stability" },
+    { word: "climate", hint: "The weather conditions prevailing in an area" },
+    { word: "courage", hint: "The ability to do something that frightens one" },
+    { word: "history", hint: "The study of past events" },
+    { word: "journey", hint: "An act of traveling from one place to another" },
+    { word: "library", hint: "A building containing books for reading" },
+    { word: "pattern", hint: "A repeated decorative design or sequence" },
+    { word: "science", hint: "The study of the natural world through observation" },
+    { word: "station", hint: "A place where trains or buses stop" },
+    { word: "weather", hint: "The state of the atmosphere at a time and place" }
+  ],
+  "Grade 8": [
+    { word: "capture", hint: "To take into one's possession by force or skill" },
+    { word: "culture", hint: "The arts and customs of a particular nation or people" },
+    { word: "explore", hint: "To travel through an unfamiliar area to learn about it" },
+    { word: "horizon", hint: "The line at which the earth's surface and the sky meet" },
+    { word: "machine", hint: "An apparatus using mechanical power to perform work" },
+    { word: "measure", hint: "To ascertain the size, amount, or degree of something" },
+    { word: "natural", hint: "Existing in or caused by nature; not artificial" },
+    { word: "observe", hint: "To notice or perceive something carefully" },
+    { word: "project", hint: "An individual or collaborative enterprise" },
+    { word: "surface", hint: "The outside part or uppermost layer of something" }
+  ],
+  "Grade 9": [
+    { word: "advance", hint: "To move forward in a purposeful way" },
+    { word: "concept", hint: "An abstract idea or general notion" },
+    { word: "develop", hint: "To grow or cause to grow and become more mature" },
+    { word: "element", hint: "An essential part or aspect of something" },
+    { word: "feature", hint: "A distinctive attribute or aspect of something" },
+    { word: "general", hint: "Affecting or concerning all or most people" },
+    { word: "improve", hint: "To make or become better" },
+    { word: "justice", hint: "Just behavior or treatment; fairness" },
+    { word: "network", hint: "An interconnected group or system" },
+    { word: "opinion", hint: "A view or judgment formed about something" },
+    { word: "process", hint: "A series of actions or steps taken to achieve an end" },
+    { word: "quality", hint: "The standard of something as measured against other things" }
+  ],
+  "Grade 10": [
+    { word: "benefit", hint: "An advantage or profit gained from something" },
+    { word: "connect", hint: "To bring together or into contact" },
+    { word: "discuss", hint: "To talk about something with another person" },
+    { word: "example", hint: "A thing characteristic of its kind, illustrating a rule" },
+    { word: "graphic", hint: "Relating to visual art, especially illustration" },
+    { word: "medical", hint: "Relating to the science or practice of medicine" },
+    { word: "popular", hint: "Liked, admired, or enjoyed by many people" },
+    { word: "routine", hint: "A sequence of actions regularly followed" },
+    { word: "similar", hint: "Resembling without being identical" },
+    { word: "support", hint: "To give assistance, comfort, or approval to" }
+  ],
+  "Grade 11": [
+    { word: "analysis", hint: "Detailed examination of the elements or structure of something" },
+    { word: "category", hint: "A class or division of people or things with shared characteristics" },
+    { word: "creative", hint: "Relating to or involving the imagination or original ideas" },
+    { word: "describe", hint: "To give an account in words of someone or something" },
+    { word: "economic", hint: "Relating to the economy or production of wealth" },
+    { word: "function", hint: "An activity or purpose natural to a person or thing" },
+    { word: "material", hint: "The matter from which a thing is or can be made" },
+    { word: "positive", hint: "Expressing or showing optimism and constructive confidence" },
+    { word: "specific", hint: "Clearly defined or identified" },
+    { word: "standard", hint: "A level of quality or attainment used as a measure" }
+  ],
+  "Grade 12": [
+    { word: "academic", hint: "Relating to education and scholarship" },
+    { word: "critical", hint: "Expressing analysis or forming important evaluations" },
+    { word: "evaluate", hint: "To form an idea of the amount, number, or value of something" },
+    { word: "generate", hint: "To cause something to arise or come into being" },
+    { word: "instance", hint: "An example or single occurrence of something" },
+    { word: "maintain", hint: "To cause or enable a condition or state of affairs to continue" },
+    { word: "overview", hint: "A general review or summary of a subject" },
+    { word: "priority", hint: "The fact or condition of being regarded as more important" },
+    { word: "resource", hint: "A supply of materials, money, or staff" },
+    { word: "strategy", hint: "A plan of action designed to achieve a major aim" }
+  ],
+  "College": [
+    { word: "adaptive", hint: "Able to adjust to new conditions or environments" },
+    { word: "coherent", hint: "Logical and consistent; easy to understand" },
+    { word: "dialogue", hint: "Conversation between two or more people" },
+    { word: "emphasis", hint: "Special importance, value, or prominence given to something" },
+    { word: "flexible", hint: "Capable of bending easily without breaking; adaptable" },
+    { word: "guidance", hint: "Advice or information aimed at resolving a problem" },
+    { word: "moderate", hint: "Average in amount, intensity, quality, or degree" },
+    { word: "parallel", hint: "Side by side and having the same distance continuously between them" },
+    { word: "reliable", hint: "Consistently good in quality or performance; trustworthy" },
+    { word: "validate", hint: "To check or prove the validity or accuracy of something" }
+  ],
+  "Adult": [
+    { word: "advocate", hint: "A person who publicly supports or recommends a particular cause" },
+    { word: "capacity", hint: "The maximum amount that something can contain or produce" },
+    { word: "database", hint: "A structured set of data held in a computer" },
+    { word: "feedback", hint: "Information about reactions to a product or a person's performance" },
+    { word: "gradient", hint: "An inclined part of a road, or a smooth transition of color" },
+    { word: "heritage", hint: "Property or traditions that are or may be inherited" },
+    { word: "momentum", hint: "The quantity of motion of a moving body, or driving power" },
+    { word: "optimize", hint: "To make the best or most effective use of a situation or resource" },
+    { word: "platform", hint: "A raised level surface, or a standard computing environment" },
+    { word: "workflow", hint: "The sequence of processes through which a piece of work passes" }
+  ]
 };
 
 function speakWord(word) {
@@ -1380,22 +1508,46 @@ function speakWord(word) {
   window.speechSynthesis.cancel();
   const utter = new SpeechSynthesisUtterance(spokenWord);
   utter.lang = "en-US";
-  utter.rate = 0.65;
+  utter.rate = 0.75;
   utter.pitch = 1;
   window.speechSynthesis.speak(utter);
 }
 
-function getNextSpellWord() {
+async function getNextSpellWord() {
   const grade = profile.grade || "Grade 9";
   const list = spellWordLists[grade] || spellWordLists["Grade 9"];
-  const randomWord = list[Math.floor(Math.random() * list.length)];
-  currentSpellWord = randomWord;
+  const fallbackItem = (typeof list[0] === "object")
+    ? list[Math.floor(Math.random() * list.length)]
+    : { word: list[Math.floor(Math.random() * list.length)], hint: "Practice spelling this word" };
+
+  currentSpellWord = fallbackItem.word;
+  const spellHintEl = document.getElementById("spellHint");
+  if (spellHintEl) spellHintEl.textContent = fallbackItem.hint || "Listen to the word and spell it.";
   spellInput.value = "";
   spellFeedback.className = "spell-feedback";
   spellFeedback.textContent = "";
   spellNextBtn.classList.add("hidden");
   spellCheckBtn.classList.remove("hidden");
+
+  // Attempt dynamic AI generation from server
+  try {
+    const host = (window.__TUTORBOT_CONFIG__ && window.__TUTORBOT_CONFIG__.esp32Host)
+      ? window.__TUTORBOT_CONFIG__.esp32Host
+      : window.location.origin;
+    const res = await fetch(`${host}/generate-spell-word?grade=${encodeURIComponent(grade)}&difficulty=easy`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.ok && data.word) {
+        currentSpellWord = data.word;
+        if (spellHintEl) spellHintEl.textContent = data.hint || "Listen to the word and type the spelling.";
+      }
+    }
+  } catch (err) {
+    // Graceful fallback to local curated word
+  }
+
   speakWord(currentSpellWord);
+  spellInput.focus();
 }
 
 if (spellButton && spellModal) {
@@ -1412,13 +1564,17 @@ if (spellButton && spellModal) {
   });
 
   spellHearBtn.addEventListener("click", () => {
-    speakWord(spellInput.value || currentSpellWord);
+    speakWord(currentSpellWord);
   });
 
   spellInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      speakWord(spellInput.value || currentSpellWord);
+      if (!spellCheckBtn.classList.contains("hidden")) {
+        spellCheckBtn.click();
+      } else if (!spellNextBtn.classList.contains("hidden")) {
+        spellNextBtn.click();
+      }
     }
   });
 
@@ -1453,7 +1609,6 @@ if (spellButton && spellModal) {
 
   spellNextBtn.addEventListener("click", () => {
     getNextSpellWord();
-    spellInput.focus();
   });
 }
 
@@ -1493,18 +1648,42 @@ function startDictationTimer() {
   }, 1000);
 }
 
-function nextDictationWord() {
+async function nextDictationWord() {
   const grade = profile.grade || "Grade 9";
   const list = spellWordLists[grade] || spellWordLists["Grade 9"];
-  currentDictationWord = list[Math.floor(Math.random() * list.length)];
+  const fallbackItem = (typeof list[0] === "object")
+    ? list[Math.floor(Math.random() * list.length)]
+    : { word: list[Math.floor(Math.random() * list.length)], hint: "Quick dictation word" };
+
+  currentDictationWord = fallbackItem.word;
+  const dictationHintEl = document.getElementById("dictationHint");
+  if (dictationHintEl) dictationHintEl.textContent = fallbackItem.hint || "Listen and type quickly!";
   dictationInput.value = "";
   dictationFeedback.textContent = "";
   dictationFeedback.className = "spell-feedback";
   dictationNextBtn.classList.add("hidden");
   dictationStartBtn.classList.remove("hidden");
   dictationStartBtn.textContent = "Check Spelling";
+
+  try {
+    const host = (window.__TUTORBOT_CONFIG__ && window.__TUTORBOT_CONFIG__.esp32Host)
+      ? window.__TUTORBOT_CONFIG__.esp32Host
+      : window.location.origin;
+    const res = await fetch(`${host}/generate-spell-word?grade=${encodeURIComponent(grade)}&difficulty=easy`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.ok && data.word) {
+        currentDictationWord = data.word;
+        if (dictationHintEl) dictationHintEl.textContent = data.hint || "Listen and type quickly!";
+      }
+    }
+  } catch (err) {
+    // Graceful fallback to local easy word
+  }
+
   speakWord(currentDictationWord);
   startDictationTimer();
+  dictationInput.focus();
 }
 
 if (dictateButton && dictationModal) {
@@ -1523,6 +1702,17 @@ if (dictateButton && dictationModal) {
   
   dictationHearBtn.addEventListener("click", () => {
     speakWord(currentDictationWord);
+  });
+
+  dictationInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (!dictationStartBtn.classList.contains("hidden")) {
+        dictationStartBtn.click();
+      } else if (!dictationNextBtn.classList.contains("hidden")) {
+        dictationNextBtn.click();
+      }
+    }
   });
   
   dictationStartBtn.addEventListener("click", () => {
@@ -1554,7 +1744,6 @@ if (dictateButton && dictationModal) {
   
   dictationNextBtn.addEventListener("click", () => {
     nextDictationWord();
-    dictationInput.focus();
   });
 }
 

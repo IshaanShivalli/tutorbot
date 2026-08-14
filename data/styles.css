@@ -65,20 +65,152 @@ body.light-theme .modal-card,
 body.light-theme .auth-card,
 body.light-theme .file-chip,
 body.light-theme .field,
-body.light-theme .bubble,
+body.light-theme .bubble.assistant,
 body.light-theme .suggestion,
 body.light-theme .btn-ghost,
 body.light-theme .pill,
 body.light-theme .empty-state,
 body.light-theme .suggestions,
 body.light-theme .bubble.system {
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.94);
 }
 
-/* .btn-solid and .pill.active intentionally keep their own colored gradient
-   backgrounds in light mode (not the near-white override above) -- both
-   have hardcoded white text, so putting them on a near-white background
-   made the text invisible. */
+/* User bubbles keep their vibrant gradient and crisp white text */
+body.light-theme .bubble.user {
+  background: var(--user);
+  color: #ffffff !important;
+  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.25);
+  border-color: transparent;
+}
+
+body.light-theme .bubble.assistant {
+  background: #ffffff;
+  color: #1a1726;
+  border: 1px solid rgba(10, 8, 18, 0.08);
+  border-left: 3px solid var(--chalk);
+  box-shadow: 0 4px 18px rgba(10, 8, 18, 0.04);
+}
+
+body.light-theme .bubble.system {
+  background: rgba(255, 255, 255, 0.85);
+  border-color: rgba(10, 8, 18, 0.15);
+  color: var(--muted);
+}
+
+body.light-theme .bubble.error {
+  background: rgba(220, 38, 38, 0.08);
+  border-color: rgba(220, 38, 38, 0.2);
+  border-left: 3px solid var(--error);
+  color: #991b1b;
+}
+
+/* Light Theme Code and Links inside Bubbles */
+body.light-theme .bubble code {
+  background: rgba(139, 44, 245, 0.09);
+  color: #7c3aed;
+  font-weight: 600;
+}
+
+body.light-theme .bubble pre {
+  background: #f6f3fb;
+  border: 1px solid rgba(10, 8, 18, 0.1);
+  color: #1a1726;
+}
+
+body.light-theme .bubble pre code {
+  background: transparent;
+  color: #1a1726;
+  font-weight: normal;
+}
+
+body.light-theme .bubble.user code {
+  background: rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+}
+
+body.light-theme .bubble.user pre {
+  background: rgba(0, 0, 0, 0.2);
+  border-color: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+}
+
+body.light-theme .bubble.user pre code {
+  background: transparent;
+  color: #ffffff;
+}
+
+body.light-theme .bubble a {
+  color: #4f46e5;
+  font-weight: 600;
+}
+
+body.light-theme .modal-card::before {
+  background: rgba(0, 0, 0, 0.18);
+}
+
+body.light-theme .modal:not(.hidden) {
+  background: rgba(15, 12, 28, 0.4);
+}
+
+body.light-theme .auth-overlay {
+  background: rgba(240, 237, 247, 0.85);
+}
+
+body.light-theme .auth-card {
+  background: #ffffff;
+  border-color: rgba(10, 8, 18, 0.1);
+  box-shadow: 0 20px 50px rgba(10, 8, 18, 0.12);
+}
+
+body.light-theme .cmd-btn {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(10, 8, 18, 0.1);
+  color: var(--muted);
+}
+
+body.light-theme .cmd-btn:hover {
+  background: var(--chalk-soft);
+  color: var(--chalk);
+  border-color: var(--chalk);
+}
+
+body.light-theme .upload-menu {
+  background: #ffffff;
+  border-color: rgba(10, 8, 18, 0.1);
+  box-shadow: 0 12px 36px rgba(10, 8, 18, 0.15);
+}
+
+body.light-theme .menu-item {
+  color: var(--text);
+}
+
+body.light-theme .menu-item:hover {
+  background: var(--chalk-soft);
+  color: var(--chalk);
+}
+
+body.light-theme .file-chip {
+  background: #f8f6fc;
+  border-color: rgba(10, 8, 18, 0.1);
+}
+
+body.light-theme .field-label input,
+body.light-theme .field-label select {
+  background: #ffffff;
+  border-color: rgba(10, 8, 18, 0.15);
+  color: var(--text);
+}
+
+body.light-theme .files-list li {
+  background: #ffffff;
+  border-color: rgba(10, 8, 18, 0.1);
+}
+
+body.light-theme .log-item {
+  background: #ffffff;
+  border-color: rgba(10, 8, 18, 0.1);
+}
+
 body.light-theme .pill.active {
   background: var(--chalk);
   color: #fff;
@@ -94,10 +226,6 @@ body.light-theme .focus-strip {
 
 body.light-theme .composer {
   border-top-color: rgba(10, 8, 18, 0.08);
-}
-
-body.light-theme .bubble {
-  border-color: rgba(10, 8, 18, 0.08);
 }
 
 body.light-theme .field {
